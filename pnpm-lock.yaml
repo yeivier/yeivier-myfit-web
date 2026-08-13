@@ -138,6 +138,9 @@ importers:
         specifier: ^3.2.1
         version: 3.2.1(@prisma/client@6.0.0(prisma@6.0.0))(prisma@6.0.0)
     devDependencies:
+      '@netlify/plugin-nextjs':
+        specifier: ^5.15.13
+        version: 5.15.13
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.3.3
@@ -563,6 +566,10 @@ packages:
   '@netlify/database@1.1.0':
     resolution: {integrity: sha512-Y36JMyQfxwHxvtFzF8K+2PyooGFQXzPNINw/guujQfMujfAwUTwv7f6XiSL3c5orNy8YZTqVVWVjkbFarhDRjw==}
     engines: {node: '>=20.6.1'}
+
+  '@netlify/plugin-nextjs@5.15.13':
+    resolution: {integrity: sha512-gBmWtgG13ZW4ytNMCvacfwZemtdtV/Ekc+6RBYvI5fndjmDvKxgFHylsw7oli+PHMGAtNqaJrN8QccGnDReu6A==}
+    engines: {node: '>=18.0.0'}
 
   '@netlify/runtime-utils@2.3.0':
     resolution: {integrity: sha512-cW8weDvsKV7zfia2m5EcBy6KILGoPD+eYZ3qWNGnIo05DGF28goPES0xKSDkNYgAF/2rRSIhie2qcBhbGVgSRg==}
@@ -3625,6 +3632,8 @@ snapshots:
       - pg-query-stream
       - postgres
       - utf-8-validate
+
+  '@netlify/plugin-nextjs@5.15.13': {}
 
   '@netlify/runtime-utils@2.3.0': {}
 

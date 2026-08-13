@@ -2,6 +2,7 @@ import { TrendingUp, ChartColumn, Sparkles, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
+import { isPasswordConfigured } from '@/lib/app-auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { SignInButton } from '@/components/auth/sign-in-button';
@@ -9,6 +10,8 @@ import { SignInButton } from '@/components/auth/sign-in-button';
 export default async function HomePage() {
 	const session = await auth();
 	if (session?.user) redirect('/panel');
+
+	const passwordConfigured = await isPasswordConfigured();
 
 	return (
 		<main className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center gap-16 px-6 py-16 sm:py-24">
@@ -25,7 +28,7 @@ export default async function HomePage() {
 					descansar. Vos solo entrená.
 				</p>
 				<div className="flex flex-col items-center gap-3 sm:flex-row">
-					<SignInButton size="lg" className="gap-2">
+					<SignInButton size="lg" className="gap-2" passwordConfigured={passwordConfigured}>
 						Empezar gratis
 						<ArrowRight className="size-4" />
 					</SignInButton>

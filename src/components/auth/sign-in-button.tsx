@@ -19,9 +19,11 @@ import { signInWithPassword } from '@/lib/auth-actions';
 type SignInButtonProps = VariantProps<typeof buttonVariants> & {
 	className?: string;
 	children: ReactNode;
+	/** False on a fresh install, where the password is still to be chosen. */
+	passwordConfigured: boolean;
 };
 
-export function SignInButton({ children, ...buttonProps }: SignInButtonProps) {
+export function SignInButton({ children, passwordConfigured, ...buttonProps }: SignInButtonProps) {
 	const pathname = usePathname();
 	const [open, setOpen] = useState(false);
 	const [password, setPassword] = useState('');
@@ -44,8 +46,12 @@ export function SignInButton({ children, ...buttonProps }: SignInButtonProps) {
 			</DialogTrigger>
 			<DialogContent>
 				<DialogHeader>
-					<DialogTitle>Entrar a MyFit</DialogTitle>
-					<DialogDescription>Ingresá la contraseña para acceder.</DialogDescription>
+					<DialogTitle>{passwordConfigured ? 'Entrar a MyFit' : 'Elegí tu contraseña'}</DialogTitle>
+					<DialogDescription>
+						{passwordConfigured
+							? 'Ingresá la contraseña para acceder.'
+							: 'Es la primera vez que entrás: la contraseña que ingreses queda guardada como la contraseña de la app.'}
+					</DialogDescription>
 				</DialogHeader>
 				<form onSubmit={handleSubmit} className="flex flex-col gap-4">
 					<div className="flex flex-col gap-2">
@@ -54,6 +60,7 @@ export function SignInButton({ children, ...buttonProps }: SignInButtonProps) {
 							id="password"
 							type="password"
 							autoFocus
+							autoComplete={passwordConfigured ? 'current-password' : 'new-password'}
 							value={password}
 							onChange={(e) => setPassword(e.target.value)}
 							disabled={isPending}
@@ -61,7 +68,7 @@ export function SignInButton({ children, ...buttonProps }: SignInButtonProps) {
 						{error && <p className="text-destructive text-sm">{error}</p>}
 					</div>
 					<Button type="submit" disabled={isPending || !password}>
-						{isPending ? 'Entrando...' : 'Entrar'}
+						{isPending ? 'Entrando...' : passwordConfigured ? 'Entrar' : 'Guardar y entrar'}
 					</Button>
 				</form>
 			</DialogContent>

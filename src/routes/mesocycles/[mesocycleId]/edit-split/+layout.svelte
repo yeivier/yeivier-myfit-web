@@ -1,0 +1,7 @@
+<script lang="ts">
+	import H2 from '$lib/components/ui/typography/H2.svelte';
+	const { children } = $props();
+</script>
+
+<H2>Editar split del mesociclo</H2>
+{@render children()}

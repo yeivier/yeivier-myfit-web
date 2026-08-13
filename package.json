@@ -18,7 +18,7 @@
 		"ci:full": "pnpm format && pnpm lint && pnpm check && pnpm test"
 	},
 	"devDependencies": {
-		"@eslint/js": "^9.39.4",
+		"@eslint/js": "^9.39.5",
 		"@iconify/json": "^2.2.227",
 		"@internationalized/date": "^3.6.0",
 		"@paralleldrive/cuid2": "^2.2.2",

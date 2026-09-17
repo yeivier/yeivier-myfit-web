@@ -3,94 +3,102 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Paleta y escala tomadas de FORJA (forjabodybuilding.com): sistema iOS,
+ * sin fuentes web (system-ui/San Francisco), superficies en capas en vez
+ * de negro/blanco plano, y acento monocromo en claro / verde en oscuro.
+ * Los nombres de variable (--background, --primary, etc.) se mantienen
+ * para no tocar los componentes, que ya solo usan estos tokens.
+ */
 :root {
-	--radius: 0.85rem;
+	--radius-row: 0.75rem; /* 12px */
+	--radius-tile: 0.875rem; /* 14px */
+	--radius-card: 1rem; /* 16px */
+	--radius: var(--radius-tile);
 
-	/* Fondo cálido, casi blanco — no un blanco puro y frío */
-	--background: oklch(0.985 0.004 90);
-	--foreground: oklch(0.24 0.02 260);
+	--background: #f2f2f7;
+	--foreground: #101012;
 
-	--card: oklch(1 0 0);
-	--card-foreground: oklch(0.24 0.02 260);
+	--card: #ffffff;
+	--card-foreground: #101012;
 
-	--popover: oklch(1 0 0);
-	--popover-foreground: oklch(0.24 0.02 260);
+	--popover: #ffffff;
+	--popover-foreground: #101012;
 
-	/* Primario: verde esmeralda enérgico — progreso, crecimiento, salud */
-	--primary: oklch(0.6 0.16 165);
-	--primary-foreground: oklch(0.99 0.01 165);
+	/* Acento monocromo: tinta sobre blanco, sin color agregado */
+	--primary: #101012;
+	--primary-foreground: #ffffff;
 
-	/* Secundario: azul cálido, para acentos y datos */
-	--secondary: oklch(0.94 0.02 260);
-	--secondary-foreground: oklch(0.28 0.03 260);
+	--secondary: #efeff4;
+	--secondary-foreground: #101012;
 
-	--muted: oklch(0.96 0.006 90);
-	--muted-foreground: oklch(0.52 0.02 260);
+	--muted: #efeff4;
+	--muted-foreground: #494950;
 
-	--accent: oklch(0.94 0.05 165);
-	--accent-foreground: oklch(0.3 0.06 165);
+	--accent: #e8e8ee;
+	--accent-foreground: #101012;
 
-	--destructive: oklch(0.6 0.21 25);
-	--destructive-foreground: oklch(0.99 0.01 25);
+	--destructive: #d70015;
+	--destructive-foreground: #ffffff;
 
-	--success: oklch(0.64 0.16 150);
-	--success-foreground: oklch(0.99 0.01 150);
+	--success: #101012;
+	--success-foreground: #ffffff;
 
-	--warning: oklch(0.78 0.15 80);
-	--warning-foreground: oklch(0.28 0.05 80);
+	--warning: #ff9500;
+	--warning-foreground: #101012;
 
-	--border: oklch(0.91 0.008 90);
-	--input: oklch(0.91 0.008 90);
-	--ring: oklch(0.6 0.16 165);
+	--border: #e5e5ea;
+	--input: #e5e5ea;
+	--ring: #101012;
 
-	--chart-1: oklch(0.6 0.16 165);
-	--chart-2: oklch(0.65 0.15 230);
-	--chart-3: oklch(0.75 0.15 80);
-	--chart-4: oklch(0.65 0.18 25);
-	--chart-5: oklch(0.6 0.12 300);
+	--chart-1: #101012;
+	--chart-2: #0a84ff;
+	--chart-3: #ff9500;
+	--chart-4: #d70015;
+	--chart-5: #af52de;
 }
 
 .dark {
-	/* No negro puro: un carbón azulado, más cómodo para los ojos */
-	--background: oklch(0.19 0.014 260);
-	--foreground: oklch(0.96 0.006 90);
+	--background: #0f0f11;
+	--foreground: #ffffff;
 
-	--card: oklch(0.23 0.016 260);
-	--card-foreground: oklch(0.96 0.006 90);
+	--card: #18181b;
+	--card-foreground: #ffffff;
 
-	--popover: oklch(0.23 0.016 260);
-	--popover-foreground: oklch(0.96 0.006 90);
+	--popover: #1f1f23;
+	--popover-foreground: #ffffff;
 
-	--primary: oklch(0.72 0.17 165);
-	--primary-foreground: oklch(0.16 0.03 165);
+	/* Acento real en oscuro: verde brasa */
+	--primary: #2fcb78;
+	--primary-foreground: #062114;
 
-	--secondary: oklch(0.28 0.02 260);
-	--secondary-foreground: oklch(0.92 0.01 260);
+	--secondary: #27272b;
+	--secondary-foreground: #ffffff;
 
-	--muted: oklch(0.26 0.015 260);
-	--muted-foreground: oklch(0.66 0.02 260);
+	--muted: #27272b;
+	--muted-foreground: #a1a1aa;
 
-	--accent: oklch(0.3 0.05 165);
-	--accent-foreground: oklch(0.92 0.03 165);
+	--accent: #33333a;
+	--accent-foreground: #ffffff;
 
-	--destructive: oklch(0.68 0.19 25);
-	--destructive-foreground: oklch(0.16 0.03 25);
+	--destructive: #ff453a;
+	--destructive-foreground: #ffffff;
 
-	--success: oklch(0.7 0.15 150);
-	--success-foreground: oklch(0.16 0.03 150);
+	--success: #2fcb78;
+	--success-foreground: #062114;
 
-	--warning: oklch(0.8 0.14 80);
-	--warning-foreground: oklch(0.22 0.04 80);
+	--warning: #ff9f0a;
+	--warning-foreground: #0f0f11;
 
-	--border: oklch(1 0 0 / 10%);
-	--input: oklch(1 0 0 / 14%);
-	--ring: oklch(0.72 0.17 165);
+	--border: #35353c;
+	--input: #35353c;
+	--ring: #2fcb78;
 
-	--chart-1: oklch(0.72 0.17 165);
-	--chart-2: oklch(0.72 0.14 230);
-	--chart-3: oklch(0.8 0.14 80);
-	--chart-4: oklch(0.7 0.18 25);
-	--chart-5: oklch(0.68 0.12 300);
+	--chart-1: #2fcb78;
+	--chart-2: #0a84ff;
+	--chart-3: #ff9f0a;
+	--chart-4: #ff453a;
+	--chart-5: #bf5af2;
 }
 
 @theme inline {
@@ -123,13 +131,16 @@
 	--color-chart-4: var(--chart-4);
 	--color-chart-5: var(--chart-5);
 
-	--radius-sm: calc(var(--radius) - 0.35rem);
-	--radius-md: calc(var(--radius) - 0.15rem);
-	--radius-lg: var(--radius);
-	--radius-xl: calc(var(--radius) + 0.3rem);
+	--radius-sm: 0.5rem; /* 8px — chips, segmentos */
+	--radius-md: var(--radius-row); /* 12px — filas, ítems de menú */
+	--radius-lg: var(--radius-tile); /* 14px — inputs, diálogos */
+	--radius-xl: var(--radius-card); /* 16px — tarjetas */
 
-	--font-sans: var(--font-geist-sans);
-	--font-mono: var(--font-geist-mono);
+	/* Sin fuentes web: la tipografía real del sistema (San Francisco en
+	   iOS/macOS), no una que se le parezca. */
+	--font-sans:
+		-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+	--font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
 }
 
 @layer base {
@@ -138,5 +149,10 @@
 	}
 	body {
 		@apply bg-background text-foreground;
+	}
+	h1,
+	h2,
+	h3 {
+		letter-spacing: -0.022em;
 	}
 }

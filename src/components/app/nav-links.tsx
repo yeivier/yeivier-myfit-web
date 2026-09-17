@@ -33,23 +33,28 @@ export function MobileBottomNav() {
 	const pathname = usePathname();
 
 	return (
-		<nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t bg-background/95 backdrop-blur lg:hidden">
-			{navItems.map(({ href, label, Icon }) => {
-				const active = pathname.startsWith(href);
-				return (
-					<Link
-						key={href}
-						href={href}
-						className={cn(
-							'flex flex-col items-center justify-center gap-0.5 py-2.5 text-[11px] font-medium text-muted-foreground',
-							active && 'text-primary'
-						)}
-					>
-						<Icon className="size-5" />
-						{label}
-					</Link>
-				);
-			})}
+		<nav className="fixed inset-x-0 bottom-0 z-40 flex justify-center border-t bg-card/90 backdrop-blur-xl backdrop-saturate-150 lg:hidden">
+			<div
+				className="grid w-full max-w-[520px] grid-cols-5 px-3 pt-2.5"
+				style={{ paddingBottom: 'calc(0.625rem + env(safe-area-inset-bottom))' }}
+			>
+				{navItems.map(({ href, label, Icon }) => {
+					const active = pathname.startsWith(href);
+					return (
+						<Link
+							key={href}
+							href={href}
+							className={cn(
+								'flex flex-col items-center gap-1 px-0.5 py-0.5 text-[11px] font-medium text-muted-foreground',
+								active && 'text-primary'
+							)}
+						>
+							<Icon className="size-5.5" strokeWidth={active ? 2.25 : 2} />
+							{label}
+						</Link>
+					);
+				})}
+			</div>
 		</nav>
 	);
 }

@@ -18,7 +18,7 @@ export async function Topbar() {
 			<div className="ml-auto flex items-center gap-2">
 				<ThemeToggle />
 				{session?.user && (
-					<UserMenu name={session.user.name} email={session.user.email} image={session.user.image} />
+					<UserMenu name={session.user.name} email={session.user.email} image={session.user.image} role={session.user.role} />
 				)}
 			</div>
 		</header>

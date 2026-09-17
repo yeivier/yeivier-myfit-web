@@ -1,6 +1,6 @@
 'use client';
 
-import { LogOut, Settings, User } from 'lucide-react';
+import { LogOut, Settings, User, Users } from 'lucide-react';
 import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -17,6 +17,7 @@ type UserMenuProps = {
 	name: string | null | undefined;
 	email: string | null | undefined;
 	image: string | null | undefined;
+	role?: 'COACH' | 'ATHLETE';
 };
 
 function getInitials(name?: string | null) {
@@ -29,7 +30,7 @@ function getInitials(name?: string | null) {
 		.toUpperCase();
 }
 
-export function UserMenu({ name, email, image }: UserMenuProps) {
+export function UserMenu({ name, email, image, role }: UserMenuProps) {
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
@@ -44,6 +45,14 @@ export function UserMenu({ name, email, image }: UserMenuProps) {
 					<span className="truncate text-xs text-muted-foreground">{email}</span>
 				</DropdownMenuLabel>
 				<DropdownMenuSeparator />
+				{role === 'COACH' && (
+					<DropdownMenuItem asChild>
+						<Link href="/coach">
+							<Users className="size-4" />
+							Mis alumnos
+						</Link>
+					</DropdownMenuItem>
+				)}
 				<DropdownMenuItem asChild>
 					<Link href="/perfil">
 						<User className="size-4" />

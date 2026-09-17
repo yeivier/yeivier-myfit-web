@@ -14,17 +14,25 @@ generator zod {
   output   = "../../src/lib/zodSchemas"
 }
 
-/// Site-wide configuration for the shared-password login, kept in a single row
-/// (id = "default"). Storing it here means the app boots without any
-/// dashboard-managed environment variable: `sessionSecret` signs the JWT
-/// session, and the password hash is written the first time someone signs in.
+/// Site-wide configuration, kept in a single row (id = "default").
+/// `sessionSecret` signs the JWT session, generated on first boot so the app
+/// works without a dashboard-managed AUTH_SECRET environment variable.
 model AppAuth {
   id            String   @id @default("default")
   sessionSecret String
-  passwordHash  String?
-  passwordSalt  String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+enum Role {
+  COACH
+  ATHLETE
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
 }
 
 model User {
@@ -42,6 +50,29 @@ model User {
   workouts       Workout[]
   migratedFromV2 Boolean?
   settings       UserSettings?
+
+  role         Role    @default(ATHLETE)
+  passwordHash String?
+  passwordSalt String?
+
+  coach       User?         @relation("CoachAthletes", fields: [coachId], references: [id], onDelete: SetNull)
+  coachId     String?
+  athletes    User[]        @relation("CoachAthletes")
+  invitesSent CoachInvite[] @relation("InvitesByCoach")
+}
+
+/// Lets a coach invite someone by email who doesn't have an account yet;
+/// accepting the invite creates their ATHLETE account already linked to
+/// that coach.
+model CoachInvite {
+  id        String       @id @default(cuid()) /// @zod.string.cuid2()
+  coach     User         @relation("InvitesByCoach", fields: [coachId], references: [id], onDelete: Cascade)
+  coachId   String
+  email     String
+  token     String       @unique
+  status    InviteStatus @default(PENDING)
+  createdAt DateTime     @default(now())
+  expiresAt DateTime
 }
 
 model Account {

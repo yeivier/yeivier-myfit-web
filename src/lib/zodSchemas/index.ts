@@ -26,9 +26,11 @@ export const MesocycleExerciseSplitDayScalarFieldEnumSchema = z.enum(['id','name
 
 export const MesocycleExerciseTemplateScalarFieldEnumSchema = z.enum(['id','name','exerciseIndex','targetMuscleGroup','customMuscleGroup','bodyweightFraction','sets','setType','repRangeStart','repRangeEnd','changeType','changeAmount','note','mesocycleExerciseSplitDayId','overloadPercentage','lastSetToFailure','forceRIRMatching','minimumWeightChange','topRepRangeStart','topRepRangeEnd']);
 
-export const AppAuthScalarFieldEnumSchema = z.enum(['id','sessionSecret','passwordHash','passwordSalt','createdAt','updatedAt']);
+export const AppAuthScalarFieldEnumSchema = z.enum(['id','sessionSecret','createdAt','updatedAt']);
 
-export const UserScalarFieldEnumSchema = z.enum(['id','name','email','emailVerified','image','createdAt','updatedAt','migratedFromV2']);
+export const UserScalarFieldEnumSchema = z.enum(['id','name','email','emailVerified','image','createdAt','updatedAt','migratedFromV2','role','passwordHash','passwordSalt','coachId']);
+
+export const CoachInviteScalarFieldEnumSchema = z.enum(['id','coachId','email','token','status','createdAt','expiresAt']);
 
 export const AccountScalarFieldEnumSchema = z.enum(['userId','type','provider','providerAccountId','refresh_token','access_token','expires_at','token_type','scope','id_token','session_state','createdAt','updatedAt']);
 
@@ -73,6 +75,14 @@ export type WorkoutStatusType = `${z.infer<typeof WorkoutStatusSchema>}`
 export const QuotesDisplayModeSchema = z.enum(['PRE_WORKOUT','POST_WORKOUT','BETWEEN_SETS']);
 
 export type QuotesDisplayModeType = `${z.infer<typeof QuotesDisplayModeSchema>}`
+
+export const RoleSchema = z.enum(['COACH','ATHLETE']);
+
+export type RoleType = `${z.infer<typeof RoleSchema>}`
+
+export const InviteStatusSchema = z.enum(['PENDING','ACCEPTED','EXPIRED']);
+
+export type InviteStatusType = `${z.infer<typeof InviteStatusSchema>}`
 
 /////////////////////////////////////////
 // MODELS
@@ -211,16 +221,13 @@ export type MesocycleExerciseTemplate = z.infer<typeof MesocycleExerciseTemplate
 /////////////////////////////////////////
 
 /**
- * Site-wide configuration for the shared-password login, kept in a single row
- * (id = "default"). Storing it here means the app boots without any
- * dashboard-managed environment variable: `sessionSecret` signs the JWT
- * session, and the password hash is written the first time someone signs in.
+ * Site-wide configuration, kept in a single row (id = "default").
+ * `sessionSecret` signs the JWT session, generated on first boot so the app
+ * works without a dashboard-managed AUTH_SECRET environment variable.
  */
 export const AppAuthSchema = z.object({
   id: z.string(),
   sessionSecret: z.string(),
-  passwordHash: z.string().nullable(),
-  passwordSalt: z.string().nullable(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 })
@@ -232,6 +239,7 @@ export type AppAuth = z.infer<typeof AppAuthSchema>
 /////////////////////////////////////////
 
 export const UserSchema = z.object({
+  role: RoleSchema,
   id: z.string().cuid2(),
   name: z.string().nullable(),
   email: z.string(),
@@ -240,9 +248,33 @@ export const UserSchema = z.object({
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
   migratedFromV2: z.boolean().nullable(),
+  passwordHash: z.string().nullable(),
+  passwordSalt: z.string().nullable(),
+  coachId: z.string().nullable(),
 })
 
 export type User = z.infer<typeof UserSchema>
+
+/////////////////////////////////////////
+// COACH INVITE SCHEMA
+/////////////////////////////////////////
+
+/**
+ * Lets a coach invite someone by email who doesn't have an account yet;
+ * accepting the invite creates their ATHLETE account already linked to
+ * that coach.
+ */
+export const CoachInviteSchema = z.object({
+  status: InviteStatusSchema,
+  id: z.string().cuid2(),
+  coachId: z.string(),
+  email: z.string(),
+  token: z.string(),
+  createdAt: z.coerce.date(),
+  expiresAt: z.coerce.date(),
+})
+
+export type CoachInvite = z.infer<typeof CoachInviteSchema>
 
 /////////////////////////////////////////
 // ACCOUNT SCHEMA
@@ -639,8 +671,6 @@ export const MesocycleExerciseTemplateSelectSchema: z.ZodType<Prisma.MesocycleEx
 export const AppAuthSelectSchema: z.ZodType<Prisma.AppAuthSelect> = z.object({
   id: z.boolean().optional(),
   sessionSecret: z.boolean().optional(),
-  passwordHash: z.boolean().optional(),
-  passwordSalt: z.boolean().optional(),
   createdAt: z.boolean().optional(),
   updatedAt: z.boolean().optional(),
 }).strict()
@@ -655,6 +685,9 @@ export const UserIncludeSchema: z.ZodType<Prisma.UserInclude> = z.object({
   mesocycles: z.union([z.boolean(),z.lazy(() => MesocycleFindManyArgsSchema)]).optional(),
   workouts: z.union([z.boolean(),z.lazy(() => WorkoutFindManyArgsSchema)]).optional(),
   settings: z.union([z.boolean(),z.lazy(() => UserSettingsArgsSchema)]).optional(),
+  coach: z.union([z.boolean(),z.lazy(() => UserArgsSchema)]).optional(),
+  athletes: z.union([z.boolean(),z.lazy(() => UserFindManyArgsSchema)]).optional(),
+  invitesSent: z.union([z.boolean(),z.lazy(() => CoachInviteFindManyArgsSchema)]).optional(),
   _count: z.union([z.boolean(),z.lazy(() => UserCountOutputTypeArgsSchema)]).optional(),
 }).strict()
 
@@ -673,6 +706,8 @@ export const UserCountOutputTypeSelectSchema: z.ZodType<Prisma.UserCountOutputTy
   exerciseSplits: z.boolean().optional(),
   mesocycles: z.boolean().optional(),
   workouts: z.boolean().optional(),
+  athletes: z.boolean().optional(),
+  invitesSent: z.boolean().optional(),
 }).strict();
 
 export const UserSelectSchema: z.ZodType<Prisma.UserSelect> = z.object({
@@ -684,13 +719,43 @@ export const UserSelectSchema: z.ZodType<Prisma.UserSelect> = z.object({
   createdAt: z.boolean().optional(),
   updatedAt: z.boolean().optional(),
   migratedFromV2: z.boolean().optional(),
+  role: z.boolean().optional(),
+  passwordHash: z.boolean().optional(),
+  passwordSalt: z.boolean().optional(),
+  coachId: z.boolean().optional(),
   accounts: z.union([z.boolean(),z.lazy(() => AccountFindManyArgsSchema)]).optional(),
   sessions: z.union([z.boolean(),z.lazy(() => SessionFindManyArgsSchema)]).optional(),
   exerciseSplits: z.union([z.boolean(),z.lazy(() => ExerciseSplitFindManyArgsSchema)]).optional(),
   mesocycles: z.union([z.boolean(),z.lazy(() => MesocycleFindManyArgsSchema)]).optional(),
   workouts: z.union([z.boolean(),z.lazy(() => WorkoutFindManyArgsSchema)]).optional(),
   settings: z.union([z.boolean(),z.lazy(() => UserSettingsArgsSchema)]).optional(),
+  coach: z.union([z.boolean(),z.lazy(() => UserArgsSchema)]).optional(),
+  athletes: z.union([z.boolean(),z.lazy(() => UserFindManyArgsSchema)]).optional(),
+  invitesSent: z.union([z.boolean(),z.lazy(() => CoachInviteFindManyArgsSchema)]).optional(),
   _count: z.union([z.boolean(),z.lazy(() => UserCountOutputTypeArgsSchema)]).optional(),
+}).strict()
+
+// COACH INVITE
+//------------------------------------------------------
+
+export const CoachInviteIncludeSchema: z.ZodType<Prisma.CoachInviteInclude> = z.object({
+  coach: z.union([z.boolean(),z.lazy(() => UserArgsSchema)]).optional(),
+}).strict()
+
+export const CoachInviteArgsSchema: z.ZodType<Prisma.CoachInviteDefaultArgs> = z.object({
+  select: z.lazy(() => CoachInviteSelectSchema).optional(),
+  include: z.lazy(() => CoachInviteIncludeSchema).optional(),
+}).strict();
+
+export const CoachInviteSelectSchema: z.ZodType<Prisma.CoachInviteSelect> = z.object({
+  id: z.boolean().optional(),
+  coachId: z.boolean().optional(),
+  email: z.boolean().optional(),
+  token: z.boolean().optional(),
+  status: z.boolean().optional(),
+  createdAt: z.boolean().optional(),
+  expiresAt: z.boolean().optional(),
+  coach: z.union([z.boolean(),z.lazy(() => UserArgsSchema)]).optional(),
 }).strict()
 
 // ACCOUNT
@@ -1538,8 +1603,6 @@ export const AppAuthWhereInputSchema: z.ZodType<Prisma.AppAuthWhereInput> = z.ob
   NOT: z.union([ z.lazy(() => AppAuthWhereInputSchema),z.lazy(() => AppAuthWhereInputSchema).array() ]).optional(),
   id: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
   sessionSecret: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
-  passwordHash: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
-  passwordSalt: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
   createdAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
   updatedAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
 }).strict();
@@ -1547,8 +1610,6 @@ export const AppAuthWhereInputSchema: z.ZodType<Prisma.AppAuthWhereInput> = z.ob
 export const AppAuthOrderByWithRelationInputSchema: z.ZodType<Prisma.AppAuthOrderByWithRelationInput> = z.object({
   id: z.lazy(() => SortOrderSchema).optional(),
   sessionSecret: z.lazy(() => SortOrderSchema).optional(),
-  passwordHash: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
-  passwordSalt: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
   createdAt: z.lazy(() => SortOrderSchema).optional(),
   updatedAt: z.lazy(() => SortOrderSchema).optional()
 }).strict();
@@ -1562,8 +1623,6 @@ export const AppAuthWhereUniqueInputSchema: z.ZodType<Prisma.AppAuthWhereUniqueI
   OR: z.lazy(() => AppAuthWhereInputSchema).array().optional(),
   NOT: z.union([ z.lazy(() => AppAuthWhereInputSchema),z.lazy(() => AppAuthWhereInputSchema).array() ]).optional(),
   sessionSecret: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
-  passwordHash: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
-  passwordSalt: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
   createdAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
   updatedAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
 }).strict());
@@ -1571,8 +1630,6 @@ export const AppAuthWhereUniqueInputSchema: z.ZodType<Prisma.AppAuthWhereUniqueI
 export const AppAuthOrderByWithAggregationInputSchema: z.ZodType<Prisma.AppAuthOrderByWithAggregationInput> = z.object({
   id: z.lazy(() => SortOrderSchema).optional(),
   sessionSecret: z.lazy(() => SortOrderSchema).optional(),
-  passwordHash: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
-  passwordSalt: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
   createdAt: z.lazy(() => SortOrderSchema).optional(),
   updatedAt: z.lazy(() => SortOrderSchema).optional(),
   _count: z.lazy(() => AppAuthCountOrderByAggregateInputSchema).optional(),
@@ -1586,8 +1643,6 @@ export const AppAuthScalarWhereWithAggregatesInputSchema: z.ZodType<Prisma.AppAu
   NOT: z.union([ z.lazy(() => AppAuthScalarWhereWithAggregatesInputSchema),z.lazy(() => AppAuthScalarWhereWithAggregatesInputSchema).array() ]).optional(),
   id: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
   sessionSecret: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
-  passwordHash: z.union([ z.lazy(() => StringNullableWithAggregatesFilterSchema),z.string() ]).optional().nullable(),
-  passwordSalt: z.union([ z.lazy(() => StringNullableWithAggregatesFilterSchema),z.string() ]).optional().nullable(),
   createdAt: z.union([ z.lazy(() => DateTimeWithAggregatesFilterSchema),z.coerce.date() ]).optional(),
   updatedAt: z.union([ z.lazy(() => DateTimeWithAggregatesFilterSchema),z.coerce.date() ]).optional(),
 }).strict();
@@ -1604,12 +1659,19 @@ export const UserWhereInputSchema: z.ZodType<Prisma.UserWhereInput> = z.object({
   createdAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
   updatedAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
   migratedFromV2: z.union([ z.lazy(() => BoolNullableFilterSchema),z.boolean() ]).optional().nullable(),
+  role: z.union([ z.lazy(() => EnumRoleFilterSchema),z.lazy(() => RoleSchema) ]).optional(),
+  passwordHash: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+  passwordSalt: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+  coachId: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
   accounts: z.lazy(() => AccountListRelationFilterSchema).optional(),
   sessions: z.lazy(() => SessionListRelationFilterSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitListRelationFilterSchema).optional(),
   mesocycles: z.lazy(() => MesocycleListRelationFilterSchema).optional(),
   workouts: z.lazy(() => WorkoutListRelationFilterSchema).optional(),
   settings: z.union([ z.lazy(() => UserSettingsNullableScalarRelationFilterSchema),z.lazy(() => UserSettingsWhereInputSchema) ]).optional().nullable(),
+  coach: z.union([ z.lazy(() => UserNullableScalarRelationFilterSchema),z.lazy(() => UserWhereInputSchema) ]).optional().nullable(),
+  athletes: z.lazy(() => UserListRelationFilterSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteListRelationFilterSchema).optional()
 }).strict();
 
 export const UserOrderByWithRelationInputSchema: z.ZodType<Prisma.UserOrderByWithRelationInput> = z.object({
@@ -1621,12 +1683,19 @@ export const UserOrderByWithRelationInputSchema: z.ZodType<Prisma.UserOrderByWit
   createdAt: z.lazy(() => SortOrderSchema).optional(),
   updatedAt: z.lazy(() => SortOrderSchema).optional(),
   migratedFromV2: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
+  role: z.lazy(() => SortOrderSchema).optional(),
+  passwordHash: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
+  passwordSalt: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
+  coachId: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
   accounts: z.lazy(() => AccountOrderByRelationAggregateInputSchema).optional(),
   sessions: z.lazy(() => SessionOrderByRelationAggregateInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitOrderByRelationAggregateInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleOrderByRelationAggregateInputSchema).optional(),
   workouts: z.lazy(() => WorkoutOrderByRelationAggregateInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsOrderByWithRelationInputSchema).optional()
+  settings: z.lazy(() => UserSettingsOrderByWithRelationInputSchema).optional(),
+  coach: z.lazy(() => UserOrderByWithRelationInputSchema).optional(),
+  athletes: z.lazy(() => UserOrderByRelationAggregateInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteOrderByRelationAggregateInputSchema).optional()
 }).strict();
 
 export const UserWhereUniqueInputSchema: z.ZodType<Prisma.UserWhereUniqueInput> = z.union([
@@ -1653,12 +1722,19 @@ export const UserWhereUniqueInputSchema: z.ZodType<Prisma.UserWhereUniqueInput> 
   createdAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
   updatedAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
   migratedFromV2: z.union([ z.lazy(() => BoolNullableFilterSchema),z.boolean() ]).optional().nullable(),
+  role: z.union([ z.lazy(() => EnumRoleFilterSchema),z.lazy(() => RoleSchema) ]).optional(),
+  passwordHash: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+  passwordSalt: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+  coachId: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
   accounts: z.lazy(() => AccountListRelationFilterSchema).optional(),
   sessions: z.lazy(() => SessionListRelationFilterSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitListRelationFilterSchema).optional(),
   mesocycles: z.lazy(() => MesocycleListRelationFilterSchema).optional(),
   workouts: z.lazy(() => WorkoutListRelationFilterSchema).optional(),
   settings: z.union([ z.lazy(() => UserSettingsNullableScalarRelationFilterSchema),z.lazy(() => UserSettingsWhereInputSchema) ]).optional().nullable(),
+  coach: z.union([ z.lazy(() => UserNullableScalarRelationFilterSchema),z.lazy(() => UserWhereInputSchema) ]).optional().nullable(),
+  athletes: z.lazy(() => UserListRelationFilterSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteListRelationFilterSchema).optional()
 }).strict());
 
 export const UserOrderByWithAggregationInputSchema: z.ZodType<Prisma.UserOrderByWithAggregationInput> = z.object({
@@ -1670,6 +1746,10 @@ export const UserOrderByWithAggregationInputSchema: z.ZodType<Prisma.UserOrderBy
   createdAt: z.lazy(() => SortOrderSchema).optional(),
   updatedAt: z.lazy(() => SortOrderSchema).optional(),
   migratedFromV2: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
+  role: z.lazy(() => SortOrderSchema).optional(),
+  passwordHash: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
+  passwordSalt: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
+  coachId: z.union([ z.lazy(() => SortOrderSchema),z.lazy(() => SortOrderInputSchema) ]).optional(),
   _count: z.lazy(() => UserCountOrderByAggregateInputSchema).optional(),
   _max: z.lazy(() => UserMaxOrderByAggregateInputSchema).optional(),
   _min: z.lazy(() => UserMinOrderByAggregateInputSchema).optional()
@@ -1687,6 +1767,87 @@ export const UserScalarWhereWithAggregatesInputSchema: z.ZodType<Prisma.UserScal
   createdAt: z.union([ z.lazy(() => DateTimeWithAggregatesFilterSchema),z.coerce.date() ]).optional(),
   updatedAt: z.union([ z.lazy(() => DateTimeWithAggregatesFilterSchema),z.coerce.date() ]).optional(),
   migratedFromV2: z.union([ z.lazy(() => BoolNullableWithAggregatesFilterSchema),z.boolean() ]).optional().nullable(),
+  role: z.union([ z.lazy(() => EnumRoleWithAggregatesFilterSchema),z.lazy(() => RoleSchema) ]).optional(),
+  passwordHash: z.union([ z.lazy(() => StringNullableWithAggregatesFilterSchema),z.string() ]).optional().nullable(),
+  passwordSalt: z.union([ z.lazy(() => StringNullableWithAggregatesFilterSchema),z.string() ]).optional().nullable(),
+  coachId: z.union([ z.lazy(() => StringNullableWithAggregatesFilterSchema),z.string() ]).optional().nullable(),
+}).strict();
+
+export const CoachInviteWhereInputSchema: z.ZodType<Prisma.CoachInviteWhereInput> = z.object({
+  AND: z.union([ z.lazy(() => CoachInviteWhereInputSchema),z.lazy(() => CoachInviteWhereInputSchema).array() ]).optional(),
+  OR: z.lazy(() => CoachInviteWhereInputSchema).array().optional(),
+  NOT: z.union([ z.lazy(() => CoachInviteWhereInputSchema),z.lazy(() => CoachInviteWhereInputSchema).array() ]).optional(),
+  id: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  coachId: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  email: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  token: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  status: z.union([ z.lazy(() => EnumInviteStatusFilterSchema),z.lazy(() => InviteStatusSchema) ]).optional(),
+  createdAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+  expiresAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+  coach: z.union([ z.lazy(() => UserScalarRelationFilterSchema),z.lazy(() => UserWhereInputSchema) ]).optional(),
+}).strict();
+
+export const CoachInviteOrderByWithRelationInputSchema: z.ZodType<Prisma.CoachInviteOrderByWithRelationInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  coachId: z.lazy(() => SortOrderSchema).optional(),
+  email: z.lazy(() => SortOrderSchema).optional(),
+  token: z.lazy(() => SortOrderSchema).optional(),
+  status: z.lazy(() => SortOrderSchema).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  expiresAt: z.lazy(() => SortOrderSchema).optional(),
+  coach: z.lazy(() => UserOrderByWithRelationInputSchema).optional()
+}).strict();
+
+export const CoachInviteWhereUniqueInputSchema: z.ZodType<Prisma.CoachInviteWhereUniqueInput> = z.union([
+  z.object({
+    id: z.string().cuid2(),
+    token: z.string()
+  }),
+  z.object({
+    id: z.string().cuid2(),
+  }),
+  z.object({
+    token: z.string(),
+  }),
+])
+.and(z.object({
+  id: z.string().cuid2().optional(),
+  token: z.string().optional(),
+  AND: z.union([ z.lazy(() => CoachInviteWhereInputSchema),z.lazy(() => CoachInviteWhereInputSchema).array() ]).optional(),
+  OR: z.lazy(() => CoachInviteWhereInputSchema).array().optional(),
+  NOT: z.union([ z.lazy(() => CoachInviteWhereInputSchema),z.lazy(() => CoachInviteWhereInputSchema).array() ]).optional(),
+  coachId: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  email: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  status: z.union([ z.lazy(() => EnumInviteStatusFilterSchema),z.lazy(() => InviteStatusSchema) ]).optional(),
+  createdAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+  expiresAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+  coach: z.union([ z.lazy(() => UserScalarRelationFilterSchema),z.lazy(() => UserWhereInputSchema) ]).optional(),
+}).strict());
+
+export const CoachInviteOrderByWithAggregationInputSchema: z.ZodType<Prisma.CoachInviteOrderByWithAggregationInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  coachId: z.lazy(() => SortOrderSchema).optional(),
+  email: z.lazy(() => SortOrderSchema).optional(),
+  token: z.lazy(() => SortOrderSchema).optional(),
+  status: z.lazy(() => SortOrderSchema).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  expiresAt: z.lazy(() => SortOrderSchema).optional(),
+  _count: z.lazy(() => CoachInviteCountOrderByAggregateInputSchema).optional(),
+  _max: z.lazy(() => CoachInviteMaxOrderByAggregateInputSchema).optional(),
+  _min: z.lazy(() => CoachInviteMinOrderByAggregateInputSchema).optional()
+}).strict();
+
+export const CoachInviteScalarWhereWithAggregatesInputSchema: z.ZodType<Prisma.CoachInviteScalarWhereWithAggregatesInput> = z.object({
+  AND: z.union([ z.lazy(() => CoachInviteScalarWhereWithAggregatesInputSchema),z.lazy(() => CoachInviteScalarWhereWithAggregatesInputSchema).array() ]).optional(),
+  OR: z.lazy(() => CoachInviteScalarWhereWithAggregatesInputSchema).array().optional(),
+  NOT: z.union([ z.lazy(() => CoachInviteScalarWhereWithAggregatesInputSchema),z.lazy(() => CoachInviteScalarWhereWithAggregatesInputSchema).array() ]).optional(),
+  id: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
+  coachId: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
+  email: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
+  token: z.union([ z.lazy(() => StringWithAggregatesFilterSchema),z.string() ]).optional(),
+  status: z.union([ z.lazy(() => EnumInviteStatusWithAggregatesFilterSchema),z.lazy(() => InviteStatusSchema) ]).optional(),
+  createdAt: z.union([ z.lazy(() => DateTimeWithAggregatesFilterSchema),z.coerce.date() ]).optional(),
+  expiresAt: z.union([ z.lazy(() => DateTimeWithAggregatesFilterSchema),z.coerce.date() ]).optional(),
 }).strict();
 
 export const AccountWhereInputSchema: z.ZodType<Prisma.AccountWhereInput> = z.object({
@@ -2995,8 +3156,6 @@ export const MesocycleExerciseTemplateUncheckedUpdateManyInputSchema: z.ZodType<
 export const AppAuthCreateInputSchema: z.ZodType<Prisma.AppAuthCreateInput> = z.object({
   id: z.string().optional(),
   sessionSecret: z.string(),
-  passwordHash: z.string().optional().nullable(),
-  passwordSalt: z.string().optional().nullable(),
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional()
 }).strict();
@@ -3004,8 +3163,6 @@ export const AppAuthCreateInputSchema: z.ZodType<Prisma.AppAuthCreateInput> = z.
 export const AppAuthUncheckedCreateInputSchema: z.ZodType<Prisma.AppAuthUncheckedCreateInput> = z.object({
   id: z.string().optional(),
   sessionSecret: z.string(),
-  passwordHash: z.string().optional().nullable(),
-  passwordSalt: z.string().optional().nullable(),
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional()
 }).strict();
@@ -3013,8 +3170,6 @@ export const AppAuthUncheckedCreateInputSchema: z.ZodType<Prisma.AppAuthUnchecke
 export const AppAuthUpdateInputSchema: z.ZodType<Prisma.AppAuthUpdateInput> = z.object({
   id: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
   sessionSecret: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
-  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
-  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
 }).strict();
@@ -3022,8 +3177,6 @@ export const AppAuthUpdateInputSchema: z.ZodType<Prisma.AppAuthUpdateInput> = z.
 export const AppAuthUncheckedUpdateInputSchema: z.ZodType<Prisma.AppAuthUncheckedUpdateInput> = z.object({
   id: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
   sessionSecret: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
-  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
-  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
 }).strict();
@@ -3031,8 +3184,6 @@ export const AppAuthUncheckedUpdateInputSchema: z.ZodType<Prisma.AppAuthUnchecke
 export const AppAuthCreateManyInputSchema: z.ZodType<Prisma.AppAuthCreateManyInput> = z.object({
   id: z.string().optional(),
   sessionSecret: z.string(),
-  passwordHash: z.string().optional().nullable(),
-  passwordSalt: z.string().optional().nullable(),
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional()
 }).strict();
@@ -3040,8 +3191,6 @@ export const AppAuthCreateManyInputSchema: z.ZodType<Prisma.AppAuthCreateManyInp
 export const AppAuthUpdateManyMutationInputSchema: z.ZodType<Prisma.AppAuthUpdateManyMutationInput> = z.object({
   id: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
   sessionSecret: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
-  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
-  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
 }).strict();
@@ -3049,8 +3198,6 @@ export const AppAuthUpdateManyMutationInputSchema: z.ZodType<Prisma.AppAuthUpdat
 export const AppAuthUncheckedUpdateManyInputSchema: z.ZodType<Prisma.AppAuthUncheckedUpdateManyInput> = z.object({
   id: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
   sessionSecret: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
-  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
-  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
 }).strict();
@@ -3064,12 +3211,18 @@ export const UserCreateInputSchema: z.ZodType<Prisma.UserCreateInput> = z.object
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
   migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
   accounts: z.lazy(() => AccountCreateNestedManyWithoutUserInputSchema).optional(),
   sessions: z.lazy(() => SessionCreateNestedManyWithoutUserInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitCreateNestedManyWithoutUserInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleCreateNestedManyWithoutUserInputSchema).optional(),
   workouts: z.lazy(() => WorkoutCreateNestedManyWithoutUserInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional()
+  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional(),
+  coach: z.lazy(() => UserCreateNestedOneWithoutAthletesInputSchema).optional(),
+  athletes: z.lazy(() => UserCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteCreateNestedManyWithoutCoachInputSchema).optional()
 }).strict();
 
 export const UserUncheckedCreateInputSchema: z.ZodType<Prisma.UserUncheckedCreateInput> = z.object({
@@ -3081,12 +3234,18 @@ export const UserUncheckedCreateInputSchema: z.ZodType<Prisma.UserUncheckedCreat
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
   migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
+  coachId: z.string().optional().nullable(),
   accounts: z.lazy(() => AccountUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   sessions: z.lazy(() => SessionUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedCreateNestedManyWithoutCoachInputSchema).optional()
 }).strict();
 
 export const UserUpdateInputSchema: z.ZodType<Prisma.UserUpdateInput> = z.object({
@@ -3098,12 +3257,18 @@ export const UserUpdateInputSchema: z.ZodType<Prisma.UserUpdateInput> = z.object
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   accounts: z.lazy(() => AccountUpdateManyWithoutUserNestedInputSchema).optional(),
   sessions: z.lazy(() => SessionUpdateManyWithoutUserNestedInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUpdateManyWithoutUserNestedInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUpdateManyWithoutUserNestedInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUpdateManyWithoutUserNestedInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional(),
+  coach: z.lazy(() => UserUpdateOneWithoutAthletesNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUpdateManyWithoutCoachNestedInputSchema).optional()
 }).strict();
 
 export const UserUncheckedUpdateInputSchema: z.ZodType<Prisma.UserUncheckedUpdateInput> = z.object({
@@ -3115,12 +3280,18 @@ export const UserUncheckedUpdateInputSchema: z.ZodType<Prisma.UserUncheckedUpdat
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  coachId: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   accounts: z.lazy(() => AccountUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   sessions: z.lazy(() => SessionUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedUpdateManyWithoutCoachNestedInputSchema).optional()
 }).strict();
 
 export const UserCreateManyInputSchema: z.ZodType<Prisma.UserCreateManyInput> = z.object({
@@ -3131,7 +3302,11 @@ export const UserCreateManyInputSchema: z.ZodType<Prisma.UserCreateManyInput> = 
   image: z.string().optional().nullable(),
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
-  migratedFromV2: z.boolean().optional().nullable()
+  migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
+  coachId: z.string().optional().nullable()
 }).strict();
 
 export const UserUpdateManyMutationInputSchema: z.ZodType<Prisma.UserUpdateManyMutationInput> = z.object({
@@ -3143,6 +3318,9 @@ export const UserUpdateManyMutationInputSchema: z.ZodType<Prisma.UserUpdateManyM
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
 }).strict();
 
 export const UserUncheckedUpdateManyInputSchema: z.ZodType<Prisma.UserUncheckedUpdateManyInput> = z.object({
@@ -3154,6 +3332,79 @@ export const UserUncheckedUpdateManyInputSchema: z.ZodType<Prisma.UserUncheckedU
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  coachId: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+}).strict();
+
+export const CoachInviteCreateInputSchema: z.ZodType<Prisma.CoachInviteCreateInput> = z.object({
+  id: z.string().cuid2().optional(),
+  email: z.string(),
+  token: z.string(),
+  status: z.lazy(() => InviteStatusSchema).optional(),
+  createdAt: z.coerce.date().optional(),
+  expiresAt: z.coerce.date(),
+  coach: z.lazy(() => UserCreateNestedOneWithoutInvitesSentInputSchema)
+}).strict();
+
+export const CoachInviteUncheckedCreateInputSchema: z.ZodType<Prisma.CoachInviteUncheckedCreateInput> = z.object({
+  id: z.string().cuid2().optional(),
+  coachId: z.string(),
+  email: z.string(),
+  token: z.string(),
+  status: z.lazy(() => InviteStatusSchema).optional(),
+  createdAt: z.coerce.date().optional(),
+  expiresAt: z.coerce.date()
+}).strict();
+
+export const CoachInviteUpdateInputSchema: z.ZodType<Prisma.CoachInviteUpdateInput> = z.object({
+  id: z.union([ z.string().cuid2(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  email: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  token: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  status: z.union([ z.lazy(() => InviteStatusSchema),z.lazy(() => EnumInviteStatusFieldUpdateOperationsInputSchema) ]).optional(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  expiresAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  coach: z.lazy(() => UserUpdateOneRequiredWithoutInvitesSentNestedInputSchema).optional()
+}).strict();
+
+export const CoachInviteUncheckedUpdateInputSchema: z.ZodType<Prisma.CoachInviteUncheckedUpdateInput> = z.object({
+  id: z.union([ z.string().cuid2(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  coachId: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  email: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  token: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  status: z.union([ z.lazy(() => InviteStatusSchema),z.lazy(() => EnumInviteStatusFieldUpdateOperationsInputSchema) ]).optional(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  expiresAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const CoachInviteCreateManyInputSchema: z.ZodType<Prisma.CoachInviteCreateManyInput> = z.object({
+  id: z.string().cuid2().optional(),
+  coachId: z.string(),
+  email: z.string(),
+  token: z.string(),
+  status: z.lazy(() => InviteStatusSchema).optional(),
+  createdAt: z.coerce.date().optional(),
+  expiresAt: z.coerce.date()
+}).strict();
+
+export const CoachInviteUpdateManyMutationInputSchema: z.ZodType<Prisma.CoachInviteUpdateManyMutationInput> = z.object({
+  id: z.union([ z.string().cuid2(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  email: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  token: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  status: z.union([ z.lazy(() => InviteStatusSchema),z.lazy(() => EnumInviteStatusFieldUpdateOperationsInputSchema) ]).optional(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  expiresAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const CoachInviteUncheckedUpdateManyInputSchema: z.ZodType<Prisma.CoachInviteUncheckedUpdateManyInput> = z.object({
+  id: z.union([ z.string().cuid2(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  coachId: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  email: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  token: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  status: z.union([ z.lazy(() => InviteStatusSchema),z.lazy(() => EnumInviteStatusFieldUpdateOperationsInputSchema) ]).optional(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  expiresAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
 }).strict();
 
 export const AccountCreateInputSchema: z.ZodType<Prisma.AccountCreateInput> = z.object({
@@ -4569,8 +4820,6 @@ export const DateTimeFilterSchema: z.ZodType<Prisma.DateTimeFilter> = z.object({
 export const AppAuthCountOrderByAggregateInputSchema: z.ZodType<Prisma.AppAuthCountOrderByAggregateInput> = z.object({
   id: z.lazy(() => SortOrderSchema).optional(),
   sessionSecret: z.lazy(() => SortOrderSchema).optional(),
-  passwordHash: z.lazy(() => SortOrderSchema).optional(),
-  passwordSalt: z.lazy(() => SortOrderSchema).optional(),
   createdAt: z.lazy(() => SortOrderSchema).optional(),
   updatedAt: z.lazy(() => SortOrderSchema).optional()
 }).strict();
@@ -4578,8 +4827,6 @@ export const AppAuthCountOrderByAggregateInputSchema: z.ZodType<Prisma.AppAuthCo
 export const AppAuthMaxOrderByAggregateInputSchema: z.ZodType<Prisma.AppAuthMaxOrderByAggregateInput> = z.object({
   id: z.lazy(() => SortOrderSchema).optional(),
   sessionSecret: z.lazy(() => SortOrderSchema).optional(),
-  passwordHash: z.lazy(() => SortOrderSchema).optional(),
-  passwordSalt: z.lazy(() => SortOrderSchema).optional(),
   createdAt: z.lazy(() => SortOrderSchema).optional(),
   updatedAt: z.lazy(() => SortOrderSchema).optional()
 }).strict();
@@ -4587,8 +4834,6 @@ export const AppAuthMaxOrderByAggregateInputSchema: z.ZodType<Prisma.AppAuthMaxO
 export const AppAuthMinOrderByAggregateInputSchema: z.ZodType<Prisma.AppAuthMinOrderByAggregateInput> = z.object({
   id: z.lazy(() => SortOrderSchema).optional(),
   sessionSecret: z.lazy(() => SortOrderSchema).optional(),
-  passwordHash: z.lazy(() => SortOrderSchema).optional(),
-  passwordSalt: z.lazy(() => SortOrderSchema).optional(),
   createdAt: z.lazy(() => SortOrderSchema).optional(),
   updatedAt: z.lazy(() => SortOrderSchema).optional()
 }).strict();
@@ -4605,6 +4850,13 @@ export const DateTimeWithAggregatesFilterSchema: z.ZodType<Prisma.DateTimeWithAg
   _count: z.lazy(() => NestedIntFilterSchema).optional(),
   _min: z.lazy(() => NestedDateTimeFilterSchema).optional(),
   _max: z.lazy(() => NestedDateTimeFilterSchema).optional()
+}).strict();
+
+export const EnumRoleFilterSchema: z.ZodType<Prisma.EnumRoleFilter> = z.object({
+  equals: z.lazy(() => RoleSchema).optional(),
+  in: z.lazy(() => RoleSchema).array().optional(),
+  notIn: z.lazy(() => RoleSchema).array().optional(),
+  not: z.union([ z.lazy(() => RoleSchema),z.lazy(() => NestedEnumRoleFilterSchema) ]).optional(),
 }).strict();
 
 export const AccountListRelationFilterSchema: z.ZodType<Prisma.AccountListRelationFilter> = z.object({
@@ -4636,6 +4888,23 @@ export const UserSettingsNullableScalarRelationFilterSchema: z.ZodType<Prisma.Us
   isNot: z.lazy(() => UserSettingsWhereInputSchema).optional().nullable()
 }).strict();
 
+export const UserNullableScalarRelationFilterSchema: z.ZodType<Prisma.UserNullableScalarRelationFilter> = z.object({
+  is: z.lazy(() => UserWhereInputSchema).optional().nullable(),
+  isNot: z.lazy(() => UserWhereInputSchema).optional().nullable()
+}).strict();
+
+export const UserListRelationFilterSchema: z.ZodType<Prisma.UserListRelationFilter> = z.object({
+  every: z.lazy(() => UserWhereInputSchema).optional(),
+  some: z.lazy(() => UserWhereInputSchema).optional(),
+  none: z.lazy(() => UserWhereInputSchema).optional()
+}).strict();
+
+export const CoachInviteListRelationFilterSchema: z.ZodType<Prisma.CoachInviteListRelationFilter> = z.object({
+  every: z.lazy(() => CoachInviteWhereInputSchema).optional(),
+  some: z.lazy(() => CoachInviteWhereInputSchema).optional(),
+  none: z.lazy(() => CoachInviteWhereInputSchema).optional()
+}).strict();
+
 export const AccountOrderByRelationAggregateInputSchema: z.ZodType<Prisma.AccountOrderByRelationAggregateInput> = z.object({
   _count: z.lazy(() => SortOrderSchema).optional()
 }).strict();
@@ -4652,6 +4921,14 @@ export const WorkoutOrderByRelationAggregateInputSchema: z.ZodType<Prisma.Workou
   _count: z.lazy(() => SortOrderSchema).optional()
 }).strict();
 
+export const UserOrderByRelationAggregateInputSchema: z.ZodType<Prisma.UserOrderByRelationAggregateInput> = z.object({
+  _count: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const CoachInviteOrderByRelationAggregateInputSchema: z.ZodType<Prisma.CoachInviteOrderByRelationAggregateInput> = z.object({
+  _count: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
 export const UserCountOrderByAggregateInputSchema: z.ZodType<Prisma.UserCountOrderByAggregateInput> = z.object({
   id: z.lazy(() => SortOrderSchema).optional(),
   name: z.lazy(() => SortOrderSchema).optional(),
@@ -4660,7 +4937,11 @@ export const UserCountOrderByAggregateInputSchema: z.ZodType<Prisma.UserCountOrd
   image: z.lazy(() => SortOrderSchema).optional(),
   createdAt: z.lazy(() => SortOrderSchema).optional(),
   updatedAt: z.lazy(() => SortOrderSchema).optional(),
-  migratedFromV2: z.lazy(() => SortOrderSchema).optional()
+  migratedFromV2: z.lazy(() => SortOrderSchema).optional(),
+  role: z.lazy(() => SortOrderSchema).optional(),
+  passwordHash: z.lazy(() => SortOrderSchema).optional(),
+  passwordSalt: z.lazy(() => SortOrderSchema).optional(),
+  coachId: z.lazy(() => SortOrderSchema).optional()
 }).strict();
 
 export const UserMaxOrderByAggregateInputSchema: z.ZodType<Prisma.UserMaxOrderByAggregateInput> = z.object({
@@ -4671,7 +4952,11 @@ export const UserMaxOrderByAggregateInputSchema: z.ZodType<Prisma.UserMaxOrderBy
   image: z.lazy(() => SortOrderSchema).optional(),
   createdAt: z.lazy(() => SortOrderSchema).optional(),
   updatedAt: z.lazy(() => SortOrderSchema).optional(),
-  migratedFromV2: z.lazy(() => SortOrderSchema).optional()
+  migratedFromV2: z.lazy(() => SortOrderSchema).optional(),
+  role: z.lazy(() => SortOrderSchema).optional(),
+  passwordHash: z.lazy(() => SortOrderSchema).optional(),
+  passwordSalt: z.lazy(() => SortOrderSchema).optional(),
+  coachId: z.lazy(() => SortOrderSchema).optional()
 }).strict();
 
 export const UserMinOrderByAggregateInputSchema: z.ZodType<Prisma.UserMinOrderByAggregateInput> = z.object({
@@ -4682,7 +4967,68 @@ export const UserMinOrderByAggregateInputSchema: z.ZodType<Prisma.UserMinOrderBy
   image: z.lazy(() => SortOrderSchema).optional(),
   createdAt: z.lazy(() => SortOrderSchema).optional(),
   updatedAt: z.lazy(() => SortOrderSchema).optional(),
-  migratedFromV2: z.lazy(() => SortOrderSchema).optional()
+  migratedFromV2: z.lazy(() => SortOrderSchema).optional(),
+  role: z.lazy(() => SortOrderSchema).optional(),
+  passwordHash: z.lazy(() => SortOrderSchema).optional(),
+  passwordSalt: z.lazy(() => SortOrderSchema).optional(),
+  coachId: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const EnumRoleWithAggregatesFilterSchema: z.ZodType<Prisma.EnumRoleWithAggregatesFilter> = z.object({
+  equals: z.lazy(() => RoleSchema).optional(),
+  in: z.lazy(() => RoleSchema).array().optional(),
+  notIn: z.lazy(() => RoleSchema).array().optional(),
+  not: z.union([ z.lazy(() => RoleSchema),z.lazy(() => NestedEnumRoleWithAggregatesFilterSchema) ]).optional(),
+  _count: z.lazy(() => NestedIntFilterSchema).optional(),
+  _min: z.lazy(() => NestedEnumRoleFilterSchema).optional(),
+  _max: z.lazy(() => NestedEnumRoleFilterSchema).optional()
+}).strict();
+
+export const EnumInviteStatusFilterSchema: z.ZodType<Prisma.EnumInviteStatusFilter> = z.object({
+  equals: z.lazy(() => InviteStatusSchema).optional(),
+  in: z.lazy(() => InviteStatusSchema).array().optional(),
+  notIn: z.lazy(() => InviteStatusSchema).array().optional(),
+  not: z.union([ z.lazy(() => InviteStatusSchema),z.lazy(() => NestedEnumInviteStatusFilterSchema) ]).optional(),
+}).strict();
+
+export const CoachInviteCountOrderByAggregateInputSchema: z.ZodType<Prisma.CoachInviteCountOrderByAggregateInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  coachId: z.lazy(() => SortOrderSchema).optional(),
+  email: z.lazy(() => SortOrderSchema).optional(),
+  token: z.lazy(() => SortOrderSchema).optional(),
+  status: z.lazy(() => SortOrderSchema).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  expiresAt: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const CoachInviteMaxOrderByAggregateInputSchema: z.ZodType<Prisma.CoachInviteMaxOrderByAggregateInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  coachId: z.lazy(() => SortOrderSchema).optional(),
+  email: z.lazy(() => SortOrderSchema).optional(),
+  token: z.lazy(() => SortOrderSchema).optional(),
+  status: z.lazy(() => SortOrderSchema).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  expiresAt: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const CoachInviteMinOrderByAggregateInputSchema: z.ZodType<Prisma.CoachInviteMinOrderByAggregateInput> = z.object({
+  id: z.lazy(() => SortOrderSchema).optional(),
+  coachId: z.lazy(() => SortOrderSchema).optional(),
+  email: z.lazy(() => SortOrderSchema).optional(),
+  token: z.lazy(() => SortOrderSchema).optional(),
+  status: z.lazy(() => SortOrderSchema).optional(),
+  createdAt: z.lazy(() => SortOrderSchema).optional(),
+  expiresAt: z.lazy(() => SortOrderSchema).optional()
+}).strict();
+
+export const EnumInviteStatusWithAggregatesFilterSchema: z.ZodType<Prisma.EnumInviteStatusWithAggregatesFilter> = z.object({
+  equals: z.lazy(() => InviteStatusSchema).optional(),
+  in: z.lazy(() => InviteStatusSchema).array().optional(),
+  notIn: z.lazy(() => InviteStatusSchema).array().optional(),
+  not: z.union([ z.lazy(() => InviteStatusSchema),z.lazy(() => NestedEnumInviteStatusWithAggregatesFilterSchema) ]).optional(),
+  _count: z.lazy(() => NestedIntFilterSchema).optional(),
+  _min: z.lazy(() => NestedEnumInviteStatusFilterSchema).optional(),
+  _max: z.lazy(() => NestedEnumInviteStatusFilterSchema).optional()
 }).strict();
 
 export const AccountProviderProviderAccountIdCompoundUniqueInputSchema: z.ZodType<Prisma.AccountProviderProviderAccountIdCompoundUniqueInput> = z.object({
@@ -5655,6 +6001,26 @@ export const UserSettingsCreateNestedOneWithoutUserInputSchema: z.ZodType<Prisma
   connect: z.lazy(() => UserSettingsWhereUniqueInputSchema).optional()
 }).strict();
 
+export const UserCreateNestedOneWithoutAthletesInputSchema: z.ZodType<Prisma.UserCreateNestedOneWithoutAthletesInput> = z.object({
+  create: z.union([ z.lazy(() => UserCreateWithoutAthletesInputSchema),z.lazy(() => UserUncheckedCreateWithoutAthletesInputSchema) ]).optional(),
+  connectOrCreate: z.lazy(() => UserCreateOrConnectWithoutAthletesInputSchema).optional(),
+  connect: z.lazy(() => UserWhereUniqueInputSchema).optional()
+}).strict();
+
+export const UserCreateNestedManyWithoutCoachInputSchema: z.ZodType<Prisma.UserCreateNestedManyWithoutCoachInput> = z.object({
+  create: z.union([ z.lazy(() => UserCreateWithoutCoachInputSchema),z.lazy(() => UserCreateWithoutCoachInputSchema).array(),z.lazy(() => UserUncheckedCreateWithoutCoachInputSchema),z.lazy(() => UserUncheckedCreateWithoutCoachInputSchema).array() ]).optional(),
+  connectOrCreate: z.union([ z.lazy(() => UserCreateOrConnectWithoutCoachInputSchema),z.lazy(() => UserCreateOrConnectWithoutCoachInputSchema).array() ]).optional(),
+  createMany: z.lazy(() => UserCreateManyCoachInputEnvelopeSchema).optional(),
+  connect: z.union([ z.lazy(() => UserWhereUniqueInputSchema),z.lazy(() => UserWhereUniqueInputSchema).array() ]).optional(),
+}).strict();
+
+export const CoachInviteCreateNestedManyWithoutCoachInputSchema: z.ZodType<Prisma.CoachInviteCreateNestedManyWithoutCoachInput> = z.object({
+  create: z.union([ z.lazy(() => CoachInviteCreateWithoutCoachInputSchema),z.lazy(() => CoachInviteCreateWithoutCoachInputSchema).array(),z.lazy(() => CoachInviteUncheckedCreateWithoutCoachInputSchema),z.lazy(() => CoachInviteUncheckedCreateWithoutCoachInputSchema).array() ]).optional(),
+  connectOrCreate: z.union([ z.lazy(() => CoachInviteCreateOrConnectWithoutCoachInputSchema),z.lazy(() => CoachInviteCreateOrConnectWithoutCoachInputSchema).array() ]).optional(),
+  createMany: z.lazy(() => CoachInviteCreateManyCoachInputEnvelopeSchema).optional(),
+  connect: z.union([ z.lazy(() => CoachInviteWhereUniqueInputSchema),z.lazy(() => CoachInviteWhereUniqueInputSchema).array() ]).optional(),
+}).strict();
+
 export const AccountUncheckedCreateNestedManyWithoutUserInputSchema: z.ZodType<Prisma.AccountUncheckedCreateNestedManyWithoutUserInput> = z.object({
   create: z.union([ z.lazy(() => AccountCreateWithoutUserInputSchema),z.lazy(() => AccountCreateWithoutUserInputSchema).array(),z.lazy(() => AccountUncheckedCreateWithoutUserInputSchema),z.lazy(() => AccountUncheckedCreateWithoutUserInputSchema).array() ]).optional(),
   connectOrCreate: z.union([ z.lazy(() => AccountCreateOrConnectWithoutUserInputSchema),z.lazy(() => AccountCreateOrConnectWithoutUserInputSchema).array() ]).optional(),
@@ -5694,6 +6060,24 @@ export const UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema: z.ZodTy
   create: z.union([ z.lazy(() => UserSettingsCreateWithoutUserInputSchema),z.lazy(() => UserSettingsUncheckedCreateWithoutUserInputSchema) ]).optional(),
   connectOrCreate: z.lazy(() => UserSettingsCreateOrConnectWithoutUserInputSchema).optional(),
   connect: z.lazy(() => UserSettingsWhereUniqueInputSchema).optional()
+}).strict();
+
+export const UserUncheckedCreateNestedManyWithoutCoachInputSchema: z.ZodType<Prisma.UserUncheckedCreateNestedManyWithoutCoachInput> = z.object({
+  create: z.union([ z.lazy(() => UserCreateWithoutCoachInputSchema),z.lazy(() => UserCreateWithoutCoachInputSchema).array(),z.lazy(() => UserUncheckedCreateWithoutCoachInputSchema),z.lazy(() => UserUncheckedCreateWithoutCoachInputSchema).array() ]).optional(),
+  connectOrCreate: z.union([ z.lazy(() => UserCreateOrConnectWithoutCoachInputSchema),z.lazy(() => UserCreateOrConnectWithoutCoachInputSchema).array() ]).optional(),
+  createMany: z.lazy(() => UserCreateManyCoachInputEnvelopeSchema).optional(),
+  connect: z.union([ z.lazy(() => UserWhereUniqueInputSchema),z.lazy(() => UserWhereUniqueInputSchema).array() ]).optional(),
+}).strict();
+
+export const CoachInviteUncheckedCreateNestedManyWithoutCoachInputSchema: z.ZodType<Prisma.CoachInviteUncheckedCreateNestedManyWithoutCoachInput> = z.object({
+  create: z.union([ z.lazy(() => CoachInviteCreateWithoutCoachInputSchema),z.lazy(() => CoachInviteCreateWithoutCoachInputSchema).array(),z.lazy(() => CoachInviteUncheckedCreateWithoutCoachInputSchema),z.lazy(() => CoachInviteUncheckedCreateWithoutCoachInputSchema).array() ]).optional(),
+  connectOrCreate: z.union([ z.lazy(() => CoachInviteCreateOrConnectWithoutCoachInputSchema),z.lazy(() => CoachInviteCreateOrConnectWithoutCoachInputSchema).array() ]).optional(),
+  createMany: z.lazy(() => CoachInviteCreateManyCoachInputEnvelopeSchema).optional(),
+  connect: z.union([ z.lazy(() => CoachInviteWhereUniqueInputSchema),z.lazy(() => CoachInviteWhereUniqueInputSchema).array() ]).optional(),
+}).strict();
+
+export const EnumRoleFieldUpdateOperationsInputSchema: z.ZodType<Prisma.EnumRoleFieldUpdateOperationsInput> = z.object({
+  set: z.lazy(() => RoleSchema).optional()
 }).strict();
 
 export const AccountUpdateManyWithoutUserNestedInputSchema: z.ZodType<Prisma.AccountUpdateManyWithoutUserNestedInput> = z.object({
@@ -5776,6 +6160,44 @@ export const UserSettingsUpdateOneWithoutUserNestedInputSchema: z.ZodType<Prisma
   update: z.union([ z.lazy(() => UserSettingsUpdateToOneWithWhereWithoutUserInputSchema),z.lazy(() => UserSettingsUpdateWithoutUserInputSchema),z.lazy(() => UserSettingsUncheckedUpdateWithoutUserInputSchema) ]).optional(),
 }).strict();
 
+export const UserUpdateOneWithoutAthletesNestedInputSchema: z.ZodType<Prisma.UserUpdateOneWithoutAthletesNestedInput> = z.object({
+  create: z.union([ z.lazy(() => UserCreateWithoutAthletesInputSchema),z.lazy(() => UserUncheckedCreateWithoutAthletesInputSchema) ]).optional(),
+  connectOrCreate: z.lazy(() => UserCreateOrConnectWithoutAthletesInputSchema).optional(),
+  upsert: z.lazy(() => UserUpsertWithoutAthletesInputSchema).optional(),
+  disconnect: z.union([ z.boolean(),z.lazy(() => UserWhereInputSchema) ]).optional(),
+  delete: z.union([ z.boolean(),z.lazy(() => UserWhereInputSchema) ]).optional(),
+  connect: z.lazy(() => UserWhereUniqueInputSchema).optional(),
+  update: z.union([ z.lazy(() => UserUpdateToOneWithWhereWithoutAthletesInputSchema),z.lazy(() => UserUpdateWithoutAthletesInputSchema),z.lazy(() => UserUncheckedUpdateWithoutAthletesInputSchema) ]).optional(),
+}).strict();
+
+export const UserUpdateManyWithoutCoachNestedInputSchema: z.ZodType<Prisma.UserUpdateManyWithoutCoachNestedInput> = z.object({
+  create: z.union([ z.lazy(() => UserCreateWithoutCoachInputSchema),z.lazy(() => UserCreateWithoutCoachInputSchema).array(),z.lazy(() => UserUncheckedCreateWithoutCoachInputSchema),z.lazy(() => UserUncheckedCreateWithoutCoachInputSchema).array() ]).optional(),
+  connectOrCreate: z.union([ z.lazy(() => UserCreateOrConnectWithoutCoachInputSchema),z.lazy(() => UserCreateOrConnectWithoutCoachInputSchema).array() ]).optional(),
+  upsert: z.union([ z.lazy(() => UserUpsertWithWhereUniqueWithoutCoachInputSchema),z.lazy(() => UserUpsertWithWhereUniqueWithoutCoachInputSchema).array() ]).optional(),
+  createMany: z.lazy(() => UserCreateManyCoachInputEnvelopeSchema).optional(),
+  set: z.union([ z.lazy(() => UserWhereUniqueInputSchema),z.lazy(() => UserWhereUniqueInputSchema).array() ]).optional(),
+  disconnect: z.union([ z.lazy(() => UserWhereUniqueInputSchema),z.lazy(() => UserWhereUniqueInputSchema).array() ]).optional(),
+  delete: z.union([ z.lazy(() => UserWhereUniqueInputSchema),z.lazy(() => UserWhereUniqueInputSchema).array() ]).optional(),
+  connect: z.union([ z.lazy(() => UserWhereUniqueInputSchema),z.lazy(() => UserWhereUniqueInputSchema).array() ]).optional(),
+  update: z.union([ z.lazy(() => UserUpdateWithWhereUniqueWithoutCoachInputSchema),z.lazy(() => UserUpdateWithWhereUniqueWithoutCoachInputSchema).array() ]).optional(),
+  updateMany: z.union([ z.lazy(() => UserUpdateManyWithWhereWithoutCoachInputSchema),z.lazy(() => UserUpdateManyWithWhereWithoutCoachInputSchema).array() ]).optional(),
+  deleteMany: z.union([ z.lazy(() => UserScalarWhereInputSchema),z.lazy(() => UserScalarWhereInputSchema).array() ]).optional(),
+}).strict();
+
+export const CoachInviteUpdateManyWithoutCoachNestedInputSchema: z.ZodType<Prisma.CoachInviteUpdateManyWithoutCoachNestedInput> = z.object({
+  create: z.union([ z.lazy(() => CoachInviteCreateWithoutCoachInputSchema),z.lazy(() => CoachInviteCreateWithoutCoachInputSchema).array(),z.lazy(() => CoachInviteUncheckedCreateWithoutCoachInputSchema),z.lazy(() => CoachInviteUncheckedCreateWithoutCoachInputSchema).array() ]).optional(),
+  connectOrCreate: z.union([ z.lazy(() => CoachInviteCreateOrConnectWithoutCoachInputSchema),z.lazy(() => CoachInviteCreateOrConnectWithoutCoachInputSchema).array() ]).optional(),
+  upsert: z.union([ z.lazy(() => CoachInviteUpsertWithWhereUniqueWithoutCoachInputSchema),z.lazy(() => CoachInviteUpsertWithWhereUniqueWithoutCoachInputSchema).array() ]).optional(),
+  createMany: z.lazy(() => CoachInviteCreateManyCoachInputEnvelopeSchema).optional(),
+  set: z.union([ z.lazy(() => CoachInviteWhereUniqueInputSchema),z.lazy(() => CoachInviteWhereUniqueInputSchema).array() ]).optional(),
+  disconnect: z.union([ z.lazy(() => CoachInviteWhereUniqueInputSchema),z.lazy(() => CoachInviteWhereUniqueInputSchema).array() ]).optional(),
+  delete: z.union([ z.lazy(() => CoachInviteWhereUniqueInputSchema),z.lazy(() => CoachInviteWhereUniqueInputSchema).array() ]).optional(),
+  connect: z.union([ z.lazy(() => CoachInviteWhereUniqueInputSchema),z.lazy(() => CoachInviteWhereUniqueInputSchema).array() ]).optional(),
+  update: z.union([ z.lazy(() => CoachInviteUpdateWithWhereUniqueWithoutCoachInputSchema),z.lazy(() => CoachInviteUpdateWithWhereUniqueWithoutCoachInputSchema).array() ]).optional(),
+  updateMany: z.union([ z.lazy(() => CoachInviteUpdateManyWithWhereWithoutCoachInputSchema),z.lazy(() => CoachInviteUpdateManyWithWhereWithoutCoachInputSchema).array() ]).optional(),
+  deleteMany: z.union([ z.lazy(() => CoachInviteScalarWhereInputSchema),z.lazy(() => CoachInviteScalarWhereInputSchema).array() ]).optional(),
+}).strict();
+
 export const AccountUncheckedUpdateManyWithoutUserNestedInputSchema: z.ZodType<Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput> = z.object({
   create: z.union([ z.lazy(() => AccountCreateWithoutUserInputSchema),z.lazy(() => AccountCreateWithoutUserInputSchema).array(),z.lazy(() => AccountUncheckedCreateWithoutUserInputSchema),z.lazy(() => AccountUncheckedCreateWithoutUserInputSchema).array() ]).optional(),
   connectOrCreate: z.union([ z.lazy(() => AccountCreateOrConnectWithoutUserInputSchema),z.lazy(() => AccountCreateOrConnectWithoutUserInputSchema).array() ]).optional(),
@@ -5854,6 +6276,52 @@ export const UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema: z.ZodTy
   delete: z.union([ z.boolean(),z.lazy(() => UserSettingsWhereInputSchema) ]).optional(),
   connect: z.lazy(() => UserSettingsWhereUniqueInputSchema).optional(),
   update: z.union([ z.lazy(() => UserSettingsUpdateToOneWithWhereWithoutUserInputSchema),z.lazy(() => UserSettingsUpdateWithoutUserInputSchema),z.lazy(() => UserSettingsUncheckedUpdateWithoutUserInputSchema) ]).optional(),
+}).strict();
+
+export const UserUncheckedUpdateManyWithoutCoachNestedInputSchema: z.ZodType<Prisma.UserUncheckedUpdateManyWithoutCoachNestedInput> = z.object({
+  create: z.union([ z.lazy(() => UserCreateWithoutCoachInputSchema),z.lazy(() => UserCreateWithoutCoachInputSchema).array(),z.lazy(() => UserUncheckedCreateWithoutCoachInputSchema),z.lazy(() => UserUncheckedCreateWithoutCoachInputSchema).array() ]).optional(),
+  connectOrCreate: z.union([ z.lazy(() => UserCreateOrConnectWithoutCoachInputSchema),z.lazy(() => UserCreateOrConnectWithoutCoachInputSchema).array() ]).optional(),
+  upsert: z.union([ z.lazy(() => UserUpsertWithWhereUniqueWithoutCoachInputSchema),z.lazy(() => UserUpsertWithWhereUniqueWithoutCoachInputSchema).array() ]).optional(),
+  createMany: z.lazy(() => UserCreateManyCoachInputEnvelopeSchema).optional(),
+  set: z.union([ z.lazy(() => UserWhereUniqueInputSchema),z.lazy(() => UserWhereUniqueInputSchema).array() ]).optional(),
+  disconnect: z.union([ z.lazy(() => UserWhereUniqueInputSchema),z.lazy(() => UserWhereUniqueInputSchema).array() ]).optional(),
+  delete: z.union([ z.lazy(() => UserWhereUniqueInputSchema),z.lazy(() => UserWhereUniqueInputSchema).array() ]).optional(),
+  connect: z.union([ z.lazy(() => UserWhereUniqueInputSchema),z.lazy(() => UserWhereUniqueInputSchema).array() ]).optional(),
+  update: z.union([ z.lazy(() => UserUpdateWithWhereUniqueWithoutCoachInputSchema),z.lazy(() => UserUpdateWithWhereUniqueWithoutCoachInputSchema).array() ]).optional(),
+  updateMany: z.union([ z.lazy(() => UserUpdateManyWithWhereWithoutCoachInputSchema),z.lazy(() => UserUpdateManyWithWhereWithoutCoachInputSchema).array() ]).optional(),
+  deleteMany: z.union([ z.lazy(() => UserScalarWhereInputSchema),z.lazy(() => UserScalarWhereInputSchema).array() ]).optional(),
+}).strict();
+
+export const CoachInviteUncheckedUpdateManyWithoutCoachNestedInputSchema: z.ZodType<Prisma.CoachInviteUncheckedUpdateManyWithoutCoachNestedInput> = z.object({
+  create: z.union([ z.lazy(() => CoachInviteCreateWithoutCoachInputSchema),z.lazy(() => CoachInviteCreateWithoutCoachInputSchema).array(),z.lazy(() => CoachInviteUncheckedCreateWithoutCoachInputSchema),z.lazy(() => CoachInviteUncheckedCreateWithoutCoachInputSchema).array() ]).optional(),
+  connectOrCreate: z.union([ z.lazy(() => CoachInviteCreateOrConnectWithoutCoachInputSchema),z.lazy(() => CoachInviteCreateOrConnectWithoutCoachInputSchema).array() ]).optional(),
+  upsert: z.union([ z.lazy(() => CoachInviteUpsertWithWhereUniqueWithoutCoachInputSchema),z.lazy(() => CoachInviteUpsertWithWhereUniqueWithoutCoachInputSchema).array() ]).optional(),
+  createMany: z.lazy(() => CoachInviteCreateManyCoachInputEnvelopeSchema).optional(),
+  set: z.union([ z.lazy(() => CoachInviteWhereUniqueInputSchema),z.lazy(() => CoachInviteWhereUniqueInputSchema).array() ]).optional(),
+  disconnect: z.union([ z.lazy(() => CoachInviteWhereUniqueInputSchema),z.lazy(() => CoachInviteWhereUniqueInputSchema).array() ]).optional(),
+  delete: z.union([ z.lazy(() => CoachInviteWhereUniqueInputSchema),z.lazy(() => CoachInviteWhereUniqueInputSchema).array() ]).optional(),
+  connect: z.union([ z.lazy(() => CoachInviteWhereUniqueInputSchema),z.lazy(() => CoachInviteWhereUniqueInputSchema).array() ]).optional(),
+  update: z.union([ z.lazy(() => CoachInviteUpdateWithWhereUniqueWithoutCoachInputSchema),z.lazy(() => CoachInviteUpdateWithWhereUniqueWithoutCoachInputSchema).array() ]).optional(),
+  updateMany: z.union([ z.lazy(() => CoachInviteUpdateManyWithWhereWithoutCoachInputSchema),z.lazy(() => CoachInviteUpdateManyWithWhereWithoutCoachInputSchema).array() ]).optional(),
+  deleteMany: z.union([ z.lazy(() => CoachInviteScalarWhereInputSchema),z.lazy(() => CoachInviteScalarWhereInputSchema).array() ]).optional(),
+}).strict();
+
+export const UserCreateNestedOneWithoutInvitesSentInputSchema: z.ZodType<Prisma.UserCreateNestedOneWithoutInvitesSentInput> = z.object({
+  create: z.union([ z.lazy(() => UserCreateWithoutInvitesSentInputSchema),z.lazy(() => UserUncheckedCreateWithoutInvitesSentInputSchema) ]).optional(),
+  connectOrCreate: z.lazy(() => UserCreateOrConnectWithoutInvitesSentInputSchema).optional(),
+  connect: z.lazy(() => UserWhereUniqueInputSchema).optional()
+}).strict();
+
+export const EnumInviteStatusFieldUpdateOperationsInputSchema: z.ZodType<Prisma.EnumInviteStatusFieldUpdateOperationsInput> = z.object({
+  set: z.lazy(() => InviteStatusSchema).optional()
+}).strict();
+
+export const UserUpdateOneRequiredWithoutInvitesSentNestedInputSchema: z.ZodType<Prisma.UserUpdateOneRequiredWithoutInvitesSentNestedInput> = z.object({
+  create: z.union([ z.lazy(() => UserCreateWithoutInvitesSentInputSchema),z.lazy(() => UserUncheckedCreateWithoutInvitesSentInputSchema) ]).optional(),
+  connectOrCreate: z.lazy(() => UserCreateOrConnectWithoutInvitesSentInputSchema).optional(),
+  upsert: z.lazy(() => UserUpsertWithoutInvitesSentInputSchema).optional(),
+  connect: z.lazy(() => UserWhereUniqueInputSchema).optional(),
+  update: z.union([ z.lazy(() => UserUpdateToOneWithWhereWithoutInvitesSentInputSchema),z.lazy(() => UserUpdateWithoutInvitesSentInputSchema),z.lazy(() => UserUncheckedUpdateWithoutInvitesSentInputSchema) ]).optional(),
 }).strict();
 
 export const UserCreateNestedOneWithoutAccountsInputSchema: z.ZodType<Prisma.UserCreateNestedOneWithoutAccountsInput> = z.object({
@@ -6450,6 +6918,40 @@ export const NestedDateTimeWithAggregatesFilterSchema: z.ZodType<Prisma.NestedDa
   _max: z.lazy(() => NestedDateTimeFilterSchema).optional()
 }).strict();
 
+export const NestedEnumRoleFilterSchema: z.ZodType<Prisma.NestedEnumRoleFilter> = z.object({
+  equals: z.lazy(() => RoleSchema).optional(),
+  in: z.lazy(() => RoleSchema).array().optional(),
+  notIn: z.lazy(() => RoleSchema).array().optional(),
+  not: z.union([ z.lazy(() => RoleSchema),z.lazy(() => NestedEnumRoleFilterSchema) ]).optional(),
+}).strict();
+
+export const NestedEnumRoleWithAggregatesFilterSchema: z.ZodType<Prisma.NestedEnumRoleWithAggregatesFilter> = z.object({
+  equals: z.lazy(() => RoleSchema).optional(),
+  in: z.lazy(() => RoleSchema).array().optional(),
+  notIn: z.lazy(() => RoleSchema).array().optional(),
+  not: z.union([ z.lazy(() => RoleSchema),z.lazy(() => NestedEnumRoleWithAggregatesFilterSchema) ]).optional(),
+  _count: z.lazy(() => NestedIntFilterSchema).optional(),
+  _min: z.lazy(() => NestedEnumRoleFilterSchema).optional(),
+  _max: z.lazy(() => NestedEnumRoleFilterSchema).optional()
+}).strict();
+
+export const NestedEnumInviteStatusFilterSchema: z.ZodType<Prisma.NestedEnumInviteStatusFilter> = z.object({
+  equals: z.lazy(() => InviteStatusSchema).optional(),
+  in: z.lazy(() => InviteStatusSchema).array().optional(),
+  notIn: z.lazy(() => InviteStatusSchema).array().optional(),
+  not: z.union([ z.lazy(() => InviteStatusSchema),z.lazy(() => NestedEnumInviteStatusFilterSchema) ]).optional(),
+}).strict();
+
+export const NestedEnumInviteStatusWithAggregatesFilterSchema: z.ZodType<Prisma.NestedEnumInviteStatusWithAggregatesFilter> = z.object({
+  equals: z.lazy(() => InviteStatusSchema).optional(),
+  in: z.lazy(() => InviteStatusSchema).array().optional(),
+  notIn: z.lazy(() => InviteStatusSchema).array().optional(),
+  not: z.union([ z.lazy(() => InviteStatusSchema),z.lazy(() => NestedEnumInviteStatusWithAggregatesFilterSchema) ]).optional(),
+  _count: z.lazy(() => NestedIntFilterSchema).optional(),
+  _min: z.lazy(() => NestedEnumInviteStatusFilterSchema).optional(),
+  _max: z.lazy(() => NestedEnumInviteStatusFilterSchema).optional()
+}).strict();
+
 export const NestedEnumWorkoutStatusNullableFilterSchema: z.ZodType<Prisma.NestedEnumWorkoutStatusNullableFilter> = z.object({
   equals: z.lazy(() => WorkoutStatusSchema).optional().nullable(),
   in: z.lazy(() => WorkoutStatusSchema).array().optional().nullable(),
@@ -6476,11 +6978,17 @@ export const UserCreateWithoutExerciseSplitsInputSchema: z.ZodType<Prisma.UserCr
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
   migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
   accounts: z.lazy(() => AccountCreateNestedManyWithoutUserInputSchema).optional(),
   sessions: z.lazy(() => SessionCreateNestedManyWithoutUserInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleCreateNestedManyWithoutUserInputSchema).optional(),
   workouts: z.lazy(() => WorkoutCreateNestedManyWithoutUserInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional()
+  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional(),
+  coach: z.lazy(() => UserCreateNestedOneWithoutAthletesInputSchema).optional(),
+  athletes: z.lazy(() => UserCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteCreateNestedManyWithoutCoachInputSchema).optional()
 }).strict();
 
 export const UserUncheckedCreateWithoutExerciseSplitsInputSchema: z.ZodType<Prisma.UserUncheckedCreateWithoutExerciseSplitsInput> = z.object({
@@ -6492,11 +7000,17 @@ export const UserUncheckedCreateWithoutExerciseSplitsInputSchema: z.ZodType<Pris
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
   migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
+  coachId: z.string().optional().nullable(),
   accounts: z.lazy(() => AccountUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   sessions: z.lazy(() => SessionUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedCreateNestedManyWithoutCoachInputSchema).optional()
 }).strict();
 
 export const UserCreateOrConnectWithoutExerciseSplitsInputSchema: z.ZodType<Prisma.UserCreateOrConnectWithoutExerciseSplitsInput> = z.object({
@@ -6590,11 +7104,17 @@ export const UserUpdateWithoutExerciseSplitsInputSchema: z.ZodType<Prisma.UserUp
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   accounts: z.lazy(() => AccountUpdateManyWithoutUserNestedInputSchema).optional(),
   sessions: z.lazy(() => SessionUpdateManyWithoutUserNestedInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUpdateManyWithoutUserNestedInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUpdateManyWithoutUserNestedInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional(),
+  coach: z.lazy(() => UserUpdateOneWithoutAthletesNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUpdateManyWithoutCoachNestedInputSchema).optional()
 }).strict();
 
 export const UserUncheckedUpdateWithoutExerciseSplitsInputSchema: z.ZodType<Prisma.UserUncheckedUpdateWithoutExerciseSplitsInput> = z.object({
@@ -6606,11 +7126,17 @@ export const UserUncheckedUpdateWithoutExerciseSplitsInputSchema: z.ZodType<Pris
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  coachId: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   accounts: z.lazy(() => AccountUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   sessions: z.lazy(() => SessionUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedUpdateManyWithoutCoachNestedInputSchema).optional()
 }).strict();
 
 export const ExerciseSplitDayUpsertWithWhereUniqueWithoutExerciseSplitInputSchema: z.ZodType<Prisma.ExerciseSplitDayUpsertWithWhereUniqueWithoutExerciseSplitInput> = z.object({
@@ -6854,11 +7380,17 @@ export const UserCreateWithoutMesocyclesInputSchema: z.ZodType<Prisma.UserCreate
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
   migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
   accounts: z.lazy(() => AccountCreateNestedManyWithoutUserInputSchema).optional(),
   sessions: z.lazy(() => SessionCreateNestedManyWithoutUserInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitCreateNestedManyWithoutUserInputSchema).optional(),
   workouts: z.lazy(() => WorkoutCreateNestedManyWithoutUserInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional()
+  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional(),
+  coach: z.lazy(() => UserCreateNestedOneWithoutAthletesInputSchema).optional(),
+  athletes: z.lazy(() => UserCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteCreateNestedManyWithoutCoachInputSchema).optional()
 }).strict();
 
 export const UserUncheckedCreateWithoutMesocyclesInputSchema: z.ZodType<Prisma.UserUncheckedCreateWithoutMesocyclesInput> = z.object({
@@ -6870,11 +7402,17 @@ export const UserUncheckedCreateWithoutMesocyclesInputSchema: z.ZodType<Prisma.U
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
   migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
+  coachId: z.string().optional().nullable(),
   accounts: z.lazy(() => AccountUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   sessions: z.lazy(() => SessionUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedCreateNestedManyWithoutCoachInputSchema).optional()
 }).strict();
 
 export const UserCreateOrConnectWithoutMesocyclesInputSchema: z.ZodType<Prisma.UserCreateOrConnectWithoutMesocyclesInput> = z.object({
@@ -6999,11 +7537,17 @@ export const UserUpdateWithoutMesocyclesInputSchema: z.ZodType<Prisma.UserUpdate
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   accounts: z.lazy(() => AccountUpdateManyWithoutUserNestedInputSchema).optional(),
   sessions: z.lazy(() => SessionUpdateManyWithoutUserNestedInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUpdateManyWithoutUserNestedInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUpdateManyWithoutUserNestedInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional(),
+  coach: z.lazy(() => UserUpdateOneWithoutAthletesNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUpdateManyWithoutCoachNestedInputSchema).optional()
 }).strict();
 
 export const UserUncheckedUpdateWithoutMesocyclesInputSchema: z.ZodType<Prisma.UserUncheckedUpdateWithoutMesocyclesInput> = z.object({
@@ -7015,11 +7559,17 @@ export const UserUncheckedUpdateWithoutMesocyclesInputSchema: z.ZodType<Prisma.U
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  coachId: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   accounts: z.lazy(() => AccountUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   sessions: z.lazy(() => SessionUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedUpdateManyWithoutCoachNestedInputSchema).optional()
 }).strict();
 
 export const ExerciseSplitUpsertWithoutUsedByMesocyclesInputSchema: z.ZodType<Prisma.ExerciseSplitUpsertWithoutUsedByMesocyclesInput> = z.object({
@@ -7601,6 +8151,137 @@ export const UserSettingsCreateOrConnectWithoutUserInputSchema: z.ZodType<Prisma
   create: z.union([ z.lazy(() => UserSettingsCreateWithoutUserInputSchema),z.lazy(() => UserSettingsUncheckedCreateWithoutUserInputSchema) ]),
 }).strict();
 
+export const UserCreateWithoutAthletesInputSchema: z.ZodType<Prisma.UserCreateWithoutAthletesInput> = z.object({
+  id: z.string().cuid2().optional(),
+  name: z.string().optional().nullable(),
+  email: z.string(),
+  emailVerified: z.coerce.date().optional().nullable(),
+  image: z.string().optional().nullable(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional(),
+  migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
+  accounts: z.lazy(() => AccountCreateNestedManyWithoutUserInputSchema).optional(),
+  sessions: z.lazy(() => SessionCreateNestedManyWithoutUserInputSchema).optional(),
+  exerciseSplits: z.lazy(() => ExerciseSplitCreateNestedManyWithoutUserInputSchema).optional(),
+  mesocycles: z.lazy(() => MesocycleCreateNestedManyWithoutUserInputSchema).optional(),
+  workouts: z.lazy(() => WorkoutCreateNestedManyWithoutUserInputSchema).optional(),
+  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional(),
+  coach: z.lazy(() => UserCreateNestedOneWithoutAthletesInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteCreateNestedManyWithoutCoachInputSchema).optional()
+}).strict();
+
+export const UserUncheckedCreateWithoutAthletesInputSchema: z.ZodType<Prisma.UserUncheckedCreateWithoutAthletesInput> = z.object({
+  id: z.string().cuid2().optional(),
+  name: z.string().optional().nullable(),
+  email: z.string(),
+  emailVerified: z.coerce.date().optional().nullable(),
+  image: z.string().optional().nullable(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional(),
+  migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
+  coachId: z.string().optional().nullable(),
+  accounts: z.lazy(() => AccountUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  sessions: z.lazy(() => SessionUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  exerciseSplits: z.lazy(() => ExerciseSplitUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  mesocycles: z.lazy(() => MesocycleUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  workouts: z.lazy(() => WorkoutUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedCreateNestedManyWithoutCoachInputSchema).optional()
+}).strict();
+
+export const UserCreateOrConnectWithoutAthletesInputSchema: z.ZodType<Prisma.UserCreateOrConnectWithoutAthletesInput> = z.object({
+  where: z.lazy(() => UserWhereUniqueInputSchema),
+  create: z.union([ z.lazy(() => UserCreateWithoutAthletesInputSchema),z.lazy(() => UserUncheckedCreateWithoutAthletesInputSchema) ]),
+}).strict();
+
+export const UserCreateWithoutCoachInputSchema: z.ZodType<Prisma.UserCreateWithoutCoachInput> = z.object({
+  id: z.string().cuid2().optional(),
+  name: z.string().optional().nullable(),
+  email: z.string(),
+  emailVerified: z.coerce.date().optional().nullable(),
+  image: z.string().optional().nullable(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional(),
+  migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
+  accounts: z.lazy(() => AccountCreateNestedManyWithoutUserInputSchema).optional(),
+  sessions: z.lazy(() => SessionCreateNestedManyWithoutUserInputSchema).optional(),
+  exerciseSplits: z.lazy(() => ExerciseSplitCreateNestedManyWithoutUserInputSchema).optional(),
+  mesocycles: z.lazy(() => MesocycleCreateNestedManyWithoutUserInputSchema).optional(),
+  workouts: z.lazy(() => WorkoutCreateNestedManyWithoutUserInputSchema).optional(),
+  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional(),
+  athletes: z.lazy(() => UserCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteCreateNestedManyWithoutCoachInputSchema).optional()
+}).strict();
+
+export const UserUncheckedCreateWithoutCoachInputSchema: z.ZodType<Prisma.UserUncheckedCreateWithoutCoachInput> = z.object({
+  id: z.string().cuid2().optional(),
+  name: z.string().optional().nullable(),
+  email: z.string(),
+  emailVerified: z.coerce.date().optional().nullable(),
+  image: z.string().optional().nullable(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional(),
+  migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
+  accounts: z.lazy(() => AccountUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  sessions: z.lazy(() => SessionUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  exerciseSplits: z.lazy(() => ExerciseSplitUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  mesocycles: z.lazy(() => MesocycleUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  workouts: z.lazy(() => WorkoutUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedCreateNestedManyWithoutCoachInputSchema).optional()
+}).strict();
+
+export const UserCreateOrConnectWithoutCoachInputSchema: z.ZodType<Prisma.UserCreateOrConnectWithoutCoachInput> = z.object({
+  where: z.lazy(() => UserWhereUniqueInputSchema),
+  create: z.union([ z.lazy(() => UserCreateWithoutCoachInputSchema),z.lazy(() => UserUncheckedCreateWithoutCoachInputSchema) ]),
+}).strict();
+
+export const UserCreateManyCoachInputEnvelopeSchema: z.ZodType<Prisma.UserCreateManyCoachInputEnvelope> = z.object({
+  data: z.union([ z.lazy(() => UserCreateManyCoachInputSchema),z.lazy(() => UserCreateManyCoachInputSchema).array() ]),
+  skipDuplicates: z.boolean().optional()
+}).strict();
+
+export const CoachInviteCreateWithoutCoachInputSchema: z.ZodType<Prisma.CoachInviteCreateWithoutCoachInput> = z.object({
+  id: z.string().cuid2().optional(),
+  email: z.string(),
+  token: z.string(),
+  status: z.lazy(() => InviteStatusSchema).optional(),
+  createdAt: z.coerce.date().optional(),
+  expiresAt: z.coerce.date()
+}).strict();
+
+export const CoachInviteUncheckedCreateWithoutCoachInputSchema: z.ZodType<Prisma.CoachInviteUncheckedCreateWithoutCoachInput> = z.object({
+  id: z.string().cuid2().optional(),
+  email: z.string(),
+  token: z.string(),
+  status: z.lazy(() => InviteStatusSchema).optional(),
+  createdAt: z.coerce.date().optional(),
+  expiresAt: z.coerce.date()
+}).strict();
+
+export const CoachInviteCreateOrConnectWithoutCoachInputSchema: z.ZodType<Prisma.CoachInviteCreateOrConnectWithoutCoachInput> = z.object({
+  where: z.lazy(() => CoachInviteWhereUniqueInputSchema),
+  create: z.union([ z.lazy(() => CoachInviteCreateWithoutCoachInputSchema),z.lazy(() => CoachInviteUncheckedCreateWithoutCoachInputSchema) ]),
+}).strict();
+
+export const CoachInviteCreateManyCoachInputEnvelopeSchema: z.ZodType<Prisma.CoachInviteCreateManyCoachInputEnvelope> = z.object({
+  data: z.union([ z.lazy(() => CoachInviteCreateManyCoachInputSchema),z.lazy(() => CoachInviteCreateManyCoachInputSchema).array() ]),
+  skipDuplicates: z.boolean().optional()
+}).strict();
+
 export const AccountUpsertWithWhereUniqueWithoutUserInputSchema: z.ZodType<Prisma.AccountUpsertWithWhereUniqueWithoutUserInput> = z.object({
   where: z.lazy(() => AccountWhereUniqueInputSchema),
   update: z.union([ z.lazy(() => AccountUpdateWithoutUserInputSchema),z.lazy(() => AccountUncheckedUpdateWithoutUserInputSchema) ]),
@@ -7755,6 +8436,228 @@ export const UserSettingsUncheckedUpdateWithoutUserInputSchema: z.ZodType<Prisma
   quotesDisplayModes: z.union([ z.lazy(() => UserSettingsUpdatequotesDisplayModesInputSchema),z.lazy(() => QuotesDisplayModeSchema).array() ]).optional(),
 }).strict();
 
+export const UserUpsertWithoutAthletesInputSchema: z.ZodType<Prisma.UserUpsertWithoutAthletesInput> = z.object({
+  update: z.union([ z.lazy(() => UserUpdateWithoutAthletesInputSchema),z.lazy(() => UserUncheckedUpdateWithoutAthletesInputSchema) ]),
+  create: z.union([ z.lazy(() => UserCreateWithoutAthletesInputSchema),z.lazy(() => UserUncheckedCreateWithoutAthletesInputSchema) ]),
+  where: z.lazy(() => UserWhereInputSchema).optional()
+}).strict();
+
+export const UserUpdateToOneWithWhereWithoutAthletesInputSchema: z.ZodType<Prisma.UserUpdateToOneWithWhereWithoutAthletesInput> = z.object({
+  where: z.lazy(() => UserWhereInputSchema).optional(),
+  data: z.union([ z.lazy(() => UserUpdateWithoutAthletesInputSchema),z.lazy(() => UserUncheckedUpdateWithoutAthletesInputSchema) ]),
+}).strict();
+
+export const UserUpdateWithoutAthletesInputSchema: z.ZodType<Prisma.UserUpdateWithoutAthletesInput> = z.object({
+  id: z.union([ z.string().cuid2(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  name: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  email: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  emailVerified: z.union([ z.coerce.date(),z.lazy(() => NullableDateTimeFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  image: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  accounts: z.lazy(() => AccountUpdateManyWithoutUserNestedInputSchema).optional(),
+  sessions: z.lazy(() => SessionUpdateManyWithoutUserNestedInputSchema).optional(),
+  exerciseSplits: z.lazy(() => ExerciseSplitUpdateManyWithoutUserNestedInputSchema).optional(),
+  mesocycles: z.lazy(() => MesocycleUpdateManyWithoutUserNestedInputSchema).optional(),
+  workouts: z.lazy(() => WorkoutUpdateManyWithoutUserNestedInputSchema).optional(),
+  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional(),
+  coach: z.lazy(() => UserUpdateOneWithoutAthletesNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUpdateManyWithoutCoachNestedInputSchema).optional()
+}).strict();
+
+export const UserUncheckedUpdateWithoutAthletesInputSchema: z.ZodType<Prisma.UserUncheckedUpdateWithoutAthletesInput> = z.object({
+  id: z.union([ z.string().cuid2(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  name: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  email: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  emailVerified: z.union([ z.coerce.date(),z.lazy(() => NullableDateTimeFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  image: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  coachId: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  accounts: z.lazy(() => AccountUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  sessions: z.lazy(() => SessionUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  exerciseSplits: z.lazy(() => ExerciseSplitUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  mesocycles: z.lazy(() => MesocycleUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  workouts: z.lazy(() => WorkoutUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedUpdateManyWithoutCoachNestedInputSchema).optional()
+}).strict();
+
+export const UserUpsertWithWhereUniqueWithoutCoachInputSchema: z.ZodType<Prisma.UserUpsertWithWhereUniqueWithoutCoachInput> = z.object({
+  where: z.lazy(() => UserWhereUniqueInputSchema),
+  update: z.union([ z.lazy(() => UserUpdateWithoutCoachInputSchema),z.lazy(() => UserUncheckedUpdateWithoutCoachInputSchema) ]),
+  create: z.union([ z.lazy(() => UserCreateWithoutCoachInputSchema),z.lazy(() => UserUncheckedCreateWithoutCoachInputSchema) ]),
+}).strict();
+
+export const UserUpdateWithWhereUniqueWithoutCoachInputSchema: z.ZodType<Prisma.UserUpdateWithWhereUniqueWithoutCoachInput> = z.object({
+  where: z.lazy(() => UserWhereUniqueInputSchema),
+  data: z.union([ z.lazy(() => UserUpdateWithoutCoachInputSchema),z.lazy(() => UserUncheckedUpdateWithoutCoachInputSchema) ]),
+}).strict();
+
+export const UserUpdateManyWithWhereWithoutCoachInputSchema: z.ZodType<Prisma.UserUpdateManyWithWhereWithoutCoachInput> = z.object({
+  where: z.lazy(() => UserScalarWhereInputSchema),
+  data: z.union([ z.lazy(() => UserUpdateManyMutationInputSchema),z.lazy(() => UserUncheckedUpdateManyWithoutCoachInputSchema) ]),
+}).strict();
+
+export const UserScalarWhereInputSchema: z.ZodType<Prisma.UserScalarWhereInput> = z.object({
+  AND: z.union([ z.lazy(() => UserScalarWhereInputSchema),z.lazy(() => UserScalarWhereInputSchema).array() ]).optional(),
+  OR: z.lazy(() => UserScalarWhereInputSchema).array().optional(),
+  NOT: z.union([ z.lazy(() => UserScalarWhereInputSchema),z.lazy(() => UserScalarWhereInputSchema).array() ]).optional(),
+  id: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  name: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+  email: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  emailVerified: z.union([ z.lazy(() => DateTimeNullableFilterSchema),z.coerce.date() ]).optional().nullable(),
+  image: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+  createdAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+  updatedAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+  migratedFromV2: z.union([ z.lazy(() => BoolNullableFilterSchema),z.boolean() ]).optional().nullable(),
+  role: z.union([ z.lazy(() => EnumRoleFilterSchema),z.lazy(() => RoleSchema) ]).optional(),
+  passwordHash: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+  passwordSalt: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+  coachId: z.union([ z.lazy(() => StringNullableFilterSchema),z.string() ]).optional().nullable(),
+}).strict();
+
+export const CoachInviteUpsertWithWhereUniqueWithoutCoachInputSchema: z.ZodType<Prisma.CoachInviteUpsertWithWhereUniqueWithoutCoachInput> = z.object({
+  where: z.lazy(() => CoachInviteWhereUniqueInputSchema),
+  update: z.union([ z.lazy(() => CoachInviteUpdateWithoutCoachInputSchema),z.lazy(() => CoachInviteUncheckedUpdateWithoutCoachInputSchema) ]),
+  create: z.union([ z.lazy(() => CoachInviteCreateWithoutCoachInputSchema),z.lazy(() => CoachInviteUncheckedCreateWithoutCoachInputSchema) ]),
+}).strict();
+
+export const CoachInviteUpdateWithWhereUniqueWithoutCoachInputSchema: z.ZodType<Prisma.CoachInviteUpdateWithWhereUniqueWithoutCoachInput> = z.object({
+  where: z.lazy(() => CoachInviteWhereUniqueInputSchema),
+  data: z.union([ z.lazy(() => CoachInviteUpdateWithoutCoachInputSchema),z.lazy(() => CoachInviteUncheckedUpdateWithoutCoachInputSchema) ]),
+}).strict();
+
+export const CoachInviteUpdateManyWithWhereWithoutCoachInputSchema: z.ZodType<Prisma.CoachInviteUpdateManyWithWhereWithoutCoachInput> = z.object({
+  where: z.lazy(() => CoachInviteScalarWhereInputSchema),
+  data: z.union([ z.lazy(() => CoachInviteUpdateManyMutationInputSchema),z.lazy(() => CoachInviteUncheckedUpdateManyWithoutCoachInputSchema) ]),
+}).strict();
+
+export const CoachInviteScalarWhereInputSchema: z.ZodType<Prisma.CoachInviteScalarWhereInput> = z.object({
+  AND: z.union([ z.lazy(() => CoachInviteScalarWhereInputSchema),z.lazy(() => CoachInviteScalarWhereInputSchema).array() ]).optional(),
+  OR: z.lazy(() => CoachInviteScalarWhereInputSchema).array().optional(),
+  NOT: z.union([ z.lazy(() => CoachInviteScalarWhereInputSchema),z.lazy(() => CoachInviteScalarWhereInputSchema).array() ]).optional(),
+  id: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  coachId: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  email: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  token: z.union([ z.lazy(() => StringFilterSchema),z.string() ]).optional(),
+  status: z.union([ z.lazy(() => EnumInviteStatusFilterSchema),z.lazy(() => InviteStatusSchema) ]).optional(),
+  createdAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+  expiresAt: z.union([ z.lazy(() => DateTimeFilterSchema),z.coerce.date() ]).optional(),
+}).strict();
+
+export const UserCreateWithoutInvitesSentInputSchema: z.ZodType<Prisma.UserCreateWithoutInvitesSentInput> = z.object({
+  id: z.string().cuid2().optional(),
+  name: z.string().optional().nullable(),
+  email: z.string(),
+  emailVerified: z.coerce.date().optional().nullable(),
+  image: z.string().optional().nullable(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional(),
+  migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
+  accounts: z.lazy(() => AccountCreateNestedManyWithoutUserInputSchema).optional(),
+  sessions: z.lazy(() => SessionCreateNestedManyWithoutUserInputSchema).optional(),
+  exerciseSplits: z.lazy(() => ExerciseSplitCreateNestedManyWithoutUserInputSchema).optional(),
+  mesocycles: z.lazy(() => MesocycleCreateNestedManyWithoutUserInputSchema).optional(),
+  workouts: z.lazy(() => WorkoutCreateNestedManyWithoutUserInputSchema).optional(),
+  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional(),
+  coach: z.lazy(() => UserCreateNestedOneWithoutAthletesInputSchema).optional(),
+  athletes: z.lazy(() => UserCreateNestedManyWithoutCoachInputSchema).optional()
+}).strict();
+
+export const UserUncheckedCreateWithoutInvitesSentInputSchema: z.ZodType<Prisma.UserUncheckedCreateWithoutInvitesSentInput> = z.object({
+  id: z.string().cuid2().optional(),
+  name: z.string().optional().nullable(),
+  email: z.string(),
+  emailVerified: z.coerce.date().optional().nullable(),
+  image: z.string().optional().nullable(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional(),
+  migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
+  coachId: z.string().optional().nullable(),
+  accounts: z.lazy(() => AccountUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  sessions: z.lazy(() => SessionUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  exerciseSplits: z.lazy(() => ExerciseSplitUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  mesocycles: z.lazy(() => MesocycleUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  workouts: z.lazy(() => WorkoutUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedCreateNestedManyWithoutCoachInputSchema).optional()
+}).strict();
+
+export const UserCreateOrConnectWithoutInvitesSentInputSchema: z.ZodType<Prisma.UserCreateOrConnectWithoutInvitesSentInput> = z.object({
+  where: z.lazy(() => UserWhereUniqueInputSchema),
+  create: z.union([ z.lazy(() => UserCreateWithoutInvitesSentInputSchema),z.lazy(() => UserUncheckedCreateWithoutInvitesSentInputSchema) ]),
+}).strict();
+
+export const UserUpsertWithoutInvitesSentInputSchema: z.ZodType<Prisma.UserUpsertWithoutInvitesSentInput> = z.object({
+  update: z.union([ z.lazy(() => UserUpdateWithoutInvitesSentInputSchema),z.lazy(() => UserUncheckedUpdateWithoutInvitesSentInputSchema) ]),
+  create: z.union([ z.lazy(() => UserCreateWithoutInvitesSentInputSchema),z.lazy(() => UserUncheckedCreateWithoutInvitesSentInputSchema) ]),
+  where: z.lazy(() => UserWhereInputSchema).optional()
+}).strict();
+
+export const UserUpdateToOneWithWhereWithoutInvitesSentInputSchema: z.ZodType<Prisma.UserUpdateToOneWithWhereWithoutInvitesSentInput> = z.object({
+  where: z.lazy(() => UserWhereInputSchema).optional(),
+  data: z.union([ z.lazy(() => UserUpdateWithoutInvitesSentInputSchema),z.lazy(() => UserUncheckedUpdateWithoutInvitesSentInputSchema) ]),
+}).strict();
+
+export const UserUpdateWithoutInvitesSentInputSchema: z.ZodType<Prisma.UserUpdateWithoutInvitesSentInput> = z.object({
+  id: z.union([ z.string().cuid2(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  name: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  email: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  emailVerified: z.union([ z.coerce.date(),z.lazy(() => NullableDateTimeFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  image: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  accounts: z.lazy(() => AccountUpdateManyWithoutUserNestedInputSchema).optional(),
+  sessions: z.lazy(() => SessionUpdateManyWithoutUserNestedInputSchema).optional(),
+  exerciseSplits: z.lazy(() => ExerciseSplitUpdateManyWithoutUserNestedInputSchema).optional(),
+  mesocycles: z.lazy(() => MesocycleUpdateManyWithoutUserNestedInputSchema).optional(),
+  workouts: z.lazy(() => WorkoutUpdateManyWithoutUserNestedInputSchema).optional(),
+  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional(),
+  coach: z.lazy(() => UserUpdateOneWithoutAthletesNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUpdateManyWithoutCoachNestedInputSchema).optional()
+}).strict();
+
+export const UserUncheckedUpdateWithoutInvitesSentInputSchema: z.ZodType<Prisma.UserUncheckedUpdateWithoutInvitesSentInput> = z.object({
+  id: z.union([ z.string().cuid2(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  name: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  email: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  emailVerified: z.union([ z.coerce.date(),z.lazy(() => NullableDateTimeFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  image: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  coachId: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  accounts: z.lazy(() => AccountUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  sessions: z.lazy(() => SessionUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  exerciseSplits: z.lazy(() => ExerciseSplitUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  mesocycles: z.lazy(() => MesocycleUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  workouts: z.lazy(() => WorkoutUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedUpdateManyWithoutCoachNestedInputSchema).optional()
+}).strict();
+
 export const UserCreateWithoutAccountsInputSchema: z.ZodType<Prisma.UserCreateWithoutAccountsInput> = z.object({
   id: z.string().cuid2().optional(),
   name: z.string().optional().nullable(),
@@ -7764,11 +8667,17 @@ export const UserCreateWithoutAccountsInputSchema: z.ZodType<Prisma.UserCreateWi
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
   migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
   sessions: z.lazy(() => SessionCreateNestedManyWithoutUserInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitCreateNestedManyWithoutUserInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleCreateNestedManyWithoutUserInputSchema).optional(),
   workouts: z.lazy(() => WorkoutCreateNestedManyWithoutUserInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional()
+  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional(),
+  coach: z.lazy(() => UserCreateNestedOneWithoutAthletesInputSchema).optional(),
+  athletes: z.lazy(() => UserCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteCreateNestedManyWithoutCoachInputSchema).optional()
 }).strict();
 
 export const UserUncheckedCreateWithoutAccountsInputSchema: z.ZodType<Prisma.UserUncheckedCreateWithoutAccountsInput> = z.object({
@@ -7780,11 +8689,17 @@ export const UserUncheckedCreateWithoutAccountsInputSchema: z.ZodType<Prisma.Use
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
   migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
+  coachId: z.string().optional().nullable(),
   sessions: z.lazy(() => SessionUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedCreateNestedManyWithoutCoachInputSchema).optional()
 }).strict();
 
 export const UserCreateOrConnectWithoutAccountsInputSchema: z.ZodType<Prisma.UserCreateOrConnectWithoutAccountsInput> = z.object({
@@ -7812,11 +8727,17 @@ export const UserUpdateWithoutAccountsInputSchema: z.ZodType<Prisma.UserUpdateWi
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   sessions: z.lazy(() => SessionUpdateManyWithoutUserNestedInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUpdateManyWithoutUserNestedInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUpdateManyWithoutUserNestedInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUpdateManyWithoutUserNestedInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional(),
+  coach: z.lazy(() => UserUpdateOneWithoutAthletesNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUpdateManyWithoutCoachNestedInputSchema).optional()
 }).strict();
 
 export const UserUncheckedUpdateWithoutAccountsInputSchema: z.ZodType<Prisma.UserUncheckedUpdateWithoutAccountsInput> = z.object({
@@ -7828,11 +8749,17 @@ export const UserUncheckedUpdateWithoutAccountsInputSchema: z.ZodType<Prisma.Use
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  coachId: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   sessions: z.lazy(() => SessionUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedUpdateManyWithoutCoachNestedInputSchema).optional()
 }).strict();
 
 export const UserCreateWithoutSessionsInputSchema: z.ZodType<Prisma.UserCreateWithoutSessionsInput> = z.object({
@@ -7844,11 +8771,17 @@ export const UserCreateWithoutSessionsInputSchema: z.ZodType<Prisma.UserCreateWi
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
   migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
   accounts: z.lazy(() => AccountCreateNestedManyWithoutUserInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitCreateNestedManyWithoutUserInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleCreateNestedManyWithoutUserInputSchema).optional(),
   workouts: z.lazy(() => WorkoutCreateNestedManyWithoutUserInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional()
+  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional(),
+  coach: z.lazy(() => UserCreateNestedOneWithoutAthletesInputSchema).optional(),
+  athletes: z.lazy(() => UserCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteCreateNestedManyWithoutCoachInputSchema).optional()
 }).strict();
 
 export const UserUncheckedCreateWithoutSessionsInputSchema: z.ZodType<Prisma.UserUncheckedCreateWithoutSessionsInput> = z.object({
@@ -7860,11 +8793,17 @@ export const UserUncheckedCreateWithoutSessionsInputSchema: z.ZodType<Prisma.Use
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
   migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
+  coachId: z.string().optional().nullable(),
   accounts: z.lazy(() => AccountUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedCreateNestedManyWithoutCoachInputSchema).optional()
 }).strict();
 
 export const UserCreateOrConnectWithoutSessionsInputSchema: z.ZodType<Prisma.UserCreateOrConnectWithoutSessionsInput> = z.object({
@@ -7892,11 +8831,17 @@ export const UserUpdateWithoutSessionsInputSchema: z.ZodType<Prisma.UserUpdateWi
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   accounts: z.lazy(() => AccountUpdateManyWithoutUserNestedInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUpdateManyWithoutUserNestedInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUpdateManyWithoutUserNestedInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUpdateManyWithoutUserNestedInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional(),
+  coach: z.lazy(() => UserUpdateOneWithoutAthletesNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUpdateManyWithoutCoachNestedInputSchema).optional()
 }).strict();
 
 export const UserUncheckedUpdateWithoutSessionsInputSchema: z.ZodType<Prisma.UserUncheckedUpdateWithoutSessionsInput> = z.object({
@@ -7908,11 +8853,17 @@ export const UserUncheckedUpdateWithoutSessionsInputSchema: z.ZodType<Prisma.Use
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  coachId: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   accounts: z.lazy(() => AccountUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   workouts: z.lazy(() => WorkoutUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedUpdateManyWithoutCoachNestedInputSchema).optional()
 }).strict();
 
 export const UserCreateWithoutSettingsInputSchema: z.ZodType<Prisma.UserCreateWithoutSettingsInput> = z.object({
@@ -7924,11 +8875,17 @@ export const UserCreateWithoutSettingsInputSchema: z.ZodType<Prisma.UserCreateWi
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
   migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
   accounts: z.lazy(() => AccountCreateNestedManyWithoutUserInputSchema).optional(),
   sessions: z.lazy(() => SessionCreateNestedManyWithoutUserInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitCreateNestedManyWithoutUserInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleCreateNestedManyWithoutUserInputSchema).optional(),
-  workouts: z.lazy(() => WorkoutCreateNestedManyWithoutUserInputSchema).optional()
+  workouts: z.lazy(() => WorkoutCreateNestedManyWithoutUserInputSchema).optional(),
+  coach: z.lazy(() => UserCreateNestedOneWithoutAthletesInputSchema).optional(),
+  athletes: z.lazy(() => UserCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteCreateNestedManyWithoutCoachInputSchema).optional()
 }).strict();
 
 export const UserUncheckedCreateWithoutSettingsInputSchema: z.ZodType<Prisma.UserUncheckedCreateWithoutSettingsInput> = z.object({
@@ -7940,11 +8897,17 @@ export const UserUncheckedCreateWithoutSettingsInputSchema: z.ZodType<Prisma.Use
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
   migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
+  coachId: z.string().optional().nullable(),
   accounts: z.lazy(() => AccountUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   sessions: z.lazy(() => SessionUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
-  workouts: z.lazy(() => WorkoutUncheckedCreateNestedManyWithoutUserInputSchema).optional()
+  workouts: z.lazy(() => WorkoutUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedCreateNestedManyWithoutCoachInputSchema).optional()
 }).strict();
 
 export const UserCreateOrConnectWithoutSettingsInputSchema: z.ZodType<Prisma.UserCreateOrConnectWithoutSettingsInput> = z.object({
@@ -7972,11 +8935,17 @@ export const UserUpdateWithoutSettingsInputSchema: z.ZodType<Prisma.UserUpdateWi
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   accounts: z.lazy(() => AccountUpdateManyWithoutUserNestedInputSchema).optional(),
   sessions: z.lazy(() => SessionUpdateManyWithoutUserNestedInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUpdateManyWithoutUserNestedInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUpdateManyWithoutUserNestedInputSchema).optional(),
-  workouts: z.lazy(() => WorkoutUpdateManyWithoutUserNestedInputSchema).optional()
+  workouts: z.lazy(() => WorkoutUpdateManyWithoutUserNestedInputSchema).optional(),
+  coach: z.lazy(() => UserUpdateOneWithoutAthletesNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUpdateManyWithoutCoachNestedInputSchema).optional()
 }).strict();
 
 export const UserUncheckedUpdateWithoutSettingsInputSchema: z.ZodType<Prisma.UserUncheckedUpdateWithoutSettingsInput> = z.object({
@@ -7988,11 +8957,17 @@ export const UserUncheckedUpdateWithoutSettingsInputSchema: z.ZodType<Prisma.Use
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  coachId: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   accounts: z.lazy(() => AccountUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   sessions: z.lazy(() => SessionUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
-  workouts: z.lazy(() => WorkoutUncheckedUpdateManyWithoutUserNestedInputSchema).optional()
+  workouts: z.lazy(() => WorkoutUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedUpdateManyWithoutCoachNestedInputSchema).optional()
 }).strict();
 
 export const WorkoutCreateWithoutWorkoutOfMesocycleInputSchema: z.ZodType<Prisma.WorkoutCreateWithoutWorkoutOfMesocycleInput> = z.object({
@@ -8136,11 +9111,17 @@ export const UserCreateWithoutWorkoutsInputSchema: z.ZodType<Prisma.UserCreateWi
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
   migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
   accounts: z.lazy(() => AccountCreateNestedManyWithoutUserInputSchema).optional(),
   sessions: z.lazy(() => SessionCreateNestedManyWithoutUserInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitCreateNestedManyWithoutUserInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleCreateNestedManyWithoutUserInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional()
+  settings: z.lazy(() => UserSettingsCreateNestedOneWithoutUserInputSchema).optional(),
+  coach: z.lazy(() => UserCreateNestedOneWithoutAthletesInputSchema).optional(),
+  athletes: z.lazy(() => UserCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteCreateNestedManyWithoutCoachInputSchema).optional()
 }).strict();
 
 export const UserUncheckedCreateWithoutWorkoutsInputSchema: z.ZodType<Prisma.UserUncheckedCreateWithoutWorkoutsInput> = z.object({
@@ -8152,11 +9133,17 @@ export const UserUncheckedCreateWithoutWorkoutsInputSchema: z.ZodType<Prisma.Use
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),
   migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable(),
+  coachId: z.string().optional().nullable(),
   accounts: z.lazy(() => AccountUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   sessions: z.lazy(() => SessionUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUncheckedCreateNestedManyWithoutUserInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUncheckedCreateNestedOneWithoutUserInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedCreateNestedManyWithoutCoachInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedCreateNestedManyWithoutCoachInputSchema).optional()
 }).strict();
 
 export const UserCreateOrConnectWithoutWorkoutsInputSchema: z.ZodType<Prisma.UserCreateOrConnectWithoutWorkoutsInput> = z.object({
@@ -8257,11 +9244,17 @@ export const UserUpdateWithoutWorkoutsInputSchema: z.ZodType<Prisma.UserUpdateWi
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   accounts: z.lazy(() => AccountUpdateManyWithoutUserNestedInputSchema).optional(),
   sessions: z.lazy(() => SessionUpdateManyWithoutUserNestedInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUpdateManyWithoutUserNestedInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUpdateManyWithoutUserNestedInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional(),
+  coach: z.lazy(() => UserUpdateOneWithoutAthletesNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUpdateManyWithoutCoachNestedInputSchema).optional()
 }).strict();
 
 export const UserUncheckedUpdateWithoutWorkoutsInputSchema: z.ZodType<Prisma.UserUncheckedUpdateWithoutWorkoutsInput> = z.object({
@@ -8273,11 +9266,17 @@ export const UserUncheckedUpdateWithoutWorkoutsInputSchema: z.ZodType<Prisma.Use
   createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  coachId: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
   accounts: z.lazy(() => AccountUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   sessions: z.lazy(() => SessionUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   exerciseSplits: z.lazy(() => ExerciseSplitUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
   mesocycles: z.lazy(() => MesocycleUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
-  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional()
+  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedUpdateManyWithoutCoachNestedInputSchema).optional()
 }).strict();
 
 export const WorkoutOfMesocycleUpsertWithoutWorkoutInputSchema: z.ZodType<Prisma.WorkoutOfMesocycleUpsertWithoutWorkoutInput> = z.object({
@@ -9056,6 +10055,29 @@ export const WorkoutCreateManyUserInputSchema: z.ZodType<Prisma.WorkoutCreateMan
   note: z.string().optional().nullable()
 }).strict();
 
+export const UserCreateManyCoachInputSchema: z.ZodType<Prisma.UserCreateManyCoachInput> = z.object({
+  id: z.string().cuid2().optional(),
+  name: z.string().optional().nullable(),
+  email: z.string(),
+  emailVerified: z.coerce.date().optional().nullable(),
+  image: z.string().optional().nullable(),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional(),
+  migratedFromV2: z.boolean().optional().nullable(),
+  role: z.lazy(() => RoleSchema).optional(),
+  passwordHash: z.string().optional().nullable(),
+  passwordSalt: z.string().optional().nullable()
+}).strict();
+
+export const CoachInviteCreateManyCoachInputSchema: z.ZodType<Prisma.CoachInviteCreateManyCoachInput> = z.object({
+  id: z.string().cuid2().optional(),
+  email: z.string(),
+  token: z.string(),
+  status: z.lazy(() => InviteStatusSchema).optional(),
+  createdAt: z.coerce.date().optional(),
+  expiresAt: z.coerce.date()
+}).strict();
+
 export const AccountUpdateWithoutUserInputSchema: z.ZodType<Prisma.AccountUpdateWithoutUserInput> = z.object({
   type: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
   provider: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
@@ -9209,6 +10231,91 @@ export const WorkoutUncheckedUpdateManyWithoutUserInputSchema: z.ZodType<Prisma.
   startedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   endedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
   note: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+}).strict();
+
+export const UserUpdateWithoutCoachInputSchema: z.ZodType<Prisma.UserUpdateWithoutCoachInput> = z.object({
+  id: z.union([ z.string().cuid2(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  name: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  email: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  emailVerified: z.union([ z.coerce.date(),z.lazy(() => NullableDateTimeFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  image: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  accounts: z.lazy(() => AccountUpdateManyWithoutUserNestedInputSchema).optional(),
+  sessions: z.lazy(() => SessionUpdateManyWithoutUserNestedInputSchema).optional(),
+  exerciseSplits: z.lazy(() => ExerciseSplitUpdateManyWithoutUserNestedInputSchema).optional(),
+  mesocycles: z.lazy(() => MesocycleUpdateManyWithoutUserNestedInputSchema).optional(),
+  workouts: z.lazy(() => WorkoutUpdateManyWithoutUserNestedInputSchema).optional(),
+  settings: z.lazy(() => UserSettingsUpdateOneWithoutUserNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUpdateManyWithoutCoachNestedInputSchema).optional()
+}).strict();
+
+export const UserUncheckedUpdateWithoutCoachInputSchema: z.ZodType<Prisma.UserUncheckedUpdateWithoutCoachInput> = z.object({
+  id: z.union([ z.string().cuid2(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  name: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  email: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  emailVerified: z.union([ z.coerce.date(),z.lazy(() => NullableDateTimeFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  image: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  accounts: z.lazy(() => AccountUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  sessions: z.lazy(() => SessionUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  exerciseSplits: z.lazy(() => ExerciseSplitUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  mesocycles: z.lazy(() => MesocycleUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  workouts: z.lazy(() => WorkoutUncheckedUpdateManyWithoutUserNestedInputSchema).optional(),
+  settings: z.lazy(() => UserSettingsUncheckedUpdateOneWithoutUserNestedInputSchema).optional(),
+  athletes: z.lazy(() => UserUncheckedUpdateManyWithoutCoachNestedInputSchema).optional(),
+  invitesSent: z.lazy(() => CoachInviteUncheckedUpdateManyWithoutCoachNestedInputSchema).optional()
+}).strict();
+
+export const UserUncheckedUpdateManyWithoutCoachInputSchema: z.ZodType<Prisma.UserUncheckedUpdateManyWithoutCoachInput> = z.object({
+  id: z.union([ z.string().cuid2(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  name: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  email: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  emailVerified: z.union([ z.coerce.date(),z.lazy(() => NullableDateTimeFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  image: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  updatedAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  migratedFromV2: z.union([ z.boolean(),z.lazy(() => NullableBoolFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  role: z.union([ z.lazy(() => RoleSchema),z.lazy(() => EnumRoleFieldUpdateOperationsInputSchema) ]).optional(),
+  passwordHash: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+  passwordSalt: z.union([ z.string(),z.lazy(() => NullableStringFieldUpdateOperationsInputSchema) ]).optional().nullable(),
+}).strict();
+
+export const CoachInviteUpdateWithoutCoachInputSchema: z.ZodType<Prisma.CoachInviteUpdateWithoutCoachInput> = z.object({
+  id: z.union([ z.string().cuid2(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  email: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  token: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  status: z.union([ z.lazy(() => InviteStatusSchema),z.lazy(() => EnumInviteStatusFieldUpdateOperationsInputSchema) ]).optional(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  expiresAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const CoachInviteUncheckedUpdateWithoutCoachInputSchema: z.ZodType<Prisma.CoachInviteUncheckedUpdateWithoutCoachInput> = z.object({
+  id: z.union([ z.string().cuid2(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  email: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  token: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  status: z.union([ z.lazy(() => InviteStatusSchema),z.lazy(() => EnumInviteStatusFieldUpdateOperationsInputSchema) ]).optional(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  expiresAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+}).strict();
+
+export const CoachInviteUncheckedUpdateManyWithoutCoachInputSchema: z.ZodType<Prisma.CoachInviteUncheckedUpdateManyWithoutCoachInput> = z.object({
+  id: z.union([ z.string().cuid2(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  email: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  token: z.union([ z.string(),z.lazy(() => StringFieldUpdateOperationsInputSchema) ]).optional(),
+  status: z.union([ z.lazy(() => InviteStatusSchema),z.lazy(() => EnumInviteStatusFieldUpdateOperationsInputSchema) ]).optional(),
+  createdAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
+  expiresAt: z.union([ z.coerce.date(),z.lazy(() => DateTimeFieldUpdateOperationsInputSchema) ]).optional(),
 }).strict();
 
 export const WorkoutExerciseCreateManyWorkoutInputSchema: z.ZodType<Prisma.WorkoutExerciseCreateManyWorkoutInput> = z.object({
@@ -9922,6 +11029,68 @@ export const UserFindUniqueOrThrowArgsSchema: z.ZodType<Prisma.UserFindUniqueOrT
   select: UserSelectSchema.optional(),
   include: UserIncludeSchema.optional(),
   where: UserWhereUniqueInputSchema,
+}).strict() ;
+
+export const CoachInviteFindFirstArgsSchema: z.ZodType<Prisma.CoachInviteFindFirstArgs> = z.object({
+  select: CoachInviteSelectSchema.optional(),
+  include: CoachInviteIncludeSchema.optional(),
+  where: CoachInviteWhereInputSchema.optional(),
+  orderBy: z.union([ CoachInviteOrderByWithRelationInputSchema.array(),CoachInviteOrderByWithRelationInputSchema ]).optional(),
+  cursor: CoachInviteWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+  distinct: z.union([ CoachInviteScalarFieldEnumSchema,CoachInviteScalarFieldEnumSchema.array() ]).optional(),
+}).strict() ;
+
+export const CoachInviteFindFirstOrThrowArgsSchema: z.ZodType<Prisma.CoachInviteFindFirstOrThrowArgs> = z.object({
+  select: CoachInviteSelectSchema.optional(),
+  include: CoachInviteIncludeSchema.optional(),
+  where: CoachInviteWhereInputSchema.optional(),
+  orderBy: z.union([ CoachInviteOrderByWithRelationInputSchema.array(),CoachInviteOrderByWithRelationInputSchema ]).optional(),
+  cursor: CoachInviteWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+  distinct: z.union([ CoachInviteScalarFieldEnumSchema,CoachInviteScalarFieldEnumSchema.array() ]).optional(),
+}).strict() ;
+
+export const CoachInviteFindManyArgsSchema: z.ZodType<Prisma.CoachInviteFindManyArgs> = z.object({
+  select: CoachInviteSelectSchema.optional(),
+  include: CoachInviteIncludeSchema.optional(),
+  where: CoachInviteWhereInputSchema.optional(),
+  orderBy: z.union([ CoachInviteOrderByWithRelationInputSchema.array(),CoachInviteOrderByWithRelationInputSchema ]).optional(),
+  cursor: CoachInviteWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+  distinct: z.union([ CoachInviteScalarFieldEnumSchema,CoachInviteScalarFieldEnumSchema.array() ]).optional(),
+}).strict() ;
+
+export const CoachInviteAggregateArgsSchema: z.ZodType<Prisma.CoachInviteAggregateArgs> = z.object({
+  where: CoachInviteWhereInputSchema.optional(),
+  orderBy: z.union([ CoachInviteOrderByWithRelationInputSchema.array(),CoachInviteOrderByWithRelationInputSchema ]).optional(),
+  cursor: CoachInviteWhereUniqueInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+}).strict() ;
+
+export const CoachInviteGroupByArgsSchema: z.ZodType<Prisma.CoachInviteGroupByArgs> = z.object({
+  where: CoachInviteWhereInputSchema.optional(),
+  orderBy: z.union([ CoachInviteOrderByWithAggregationInputSchema.array(),CoachInviteOrderByWithAggregationInputSchema ]).optional(),
+  by: CoachInviteScalarFieldEnumSchema.array(),
+  having: CoachInviteScalarWhereWithAggregatesInputSchema.optional(),
+  take: z.number().optional(),
+  skip: z.number().optional(),
+}).strict() ;
+
+export const CoachInviteFindUniqueArgsSchema: z.ZodType<Prisma.CoachInviteFindUniqueArgs> = z.object({
+  select: CoachInviteSelectSchema.optional(),
+  include: CoachInviteIncludeSchema.optional(),
+  where: CoachInviteWhereUniqueInputSchema,
+}).strict() ;
+
+export const CoachInviteFindUniqueOrThrowArgsSchema: z.ZodType<Prisma.CoachInviteFindUniqueOrThrowArgs> = z.object({
+  select: CoachInviteSelectSchema.optional(),
+  include: CoachInviteIncludeSchema.optional(),
+  where: CoachInviteWhereUniqueInputSchema,
 }).strict() ;
 
 export const AccountFindFirstArgsSchema: z.ZodType<Prisma.AccountFindFirstArgs> = z.object({
@@ -10885,6 +12054,52 @@ export const UserUpdateManyArgsSchema: z.ZodType<Prisma.UserUpdateManyArgs> = z.
 
 export const UserDeleteManyArgsSchema: z.ZodType<Prisma.UserDeleteManyArgs> = z.object({
   where: UserWhereInputSchema.optional(),
+}).strict() ;
+
+export const CoachInviteCreateArgsSchema: z.ZodType<Prisma.CoachInviteCreateArgs> = z.object({
+  select: CoachInviteSelectSchema.optional(),
+  include: CoachInviteIncludeSchema.optional(),
+  data: z.union([ CoachInviteCreateInputSchema,CoachInviteUncheckedCreateInputSchema ]),
+}).strict() ;
+
+export const CoachInviteUpsertArgsSchema: z.ZodType<Prisma.CoachInviteUpsertArgs> = z.object({
+  select: CoachInviteSelectSchema.optional(),
+  include: CoachInviteIncludeSchema.optional(),
+  where: CoachInviteWhereUniqueInputSchema,
+  create: z.union([ CoachInviteCreateInputSchema,CoachInviteUncheckedCreateInputSchema ]),
+  update: z.union([ CoachInviteUpdateInputSchema,CoachInviteUncheckedUpdateInputSchema ]),
+}).strict() ;
+
+export const CoachInviteCreateManyArgsSchema: z.ZodType<Prisma.CoachInviteCreateManyArgs> = z.object({
+  data: z.union([ CoachInviteCreateManyInputSchema,CoachInviteCreateManyInputSchema.array() ]),
+  skipDuplicates: z.boolean().optional(),
+}).strict() ;
+
+export const CoachInviteCreateManyAndReturnArgsSchema: z.ZodType<Prisma.CoachInviteCreateManyAndReturnArgs> = z.object({
+  data: z.union([ CoachInviteCreateManyInputSchema,CoachInviteCreateManyInputSchema.array() ]),
+  skipDuplicates: z.boolean().optional(),
+}).strict() ;
+
+export const CoachInviteDeleteArgsSchema: z.ZodType<Prisma.CoachInviteDeleteArgs> = z.object({
+  select: CoachInviteSelectSchema.optional(),
+  include: CoachInviteIncludeSchema.optional(),
+  where: CoachInviteWhereUniqueInputSchema,
+}).strict() ;
+
+export const CoachInviteUpdateArgsSchema: z.ZodType<Prisma.CoachInviteUpdateArgs> = z.object({
+  select: CoachInviteSelectSchema.optional(),
+  include: CoachInviteIncludeSchema.optional(),
+  data: z.union([ CoachInviteUpdateInputSchema,CoachInviteUncheckedUpdateInputSchema ]),
+  where: CoachInviteWhereUniqueInputSchema,
+}).strict() ;
+
+export const CoachInviteUpdateManyArgsSchema: z.ZodType<Prisma.CoachInviteUpdateManyArgs> = z.object({
+  data: z.union([ CoachInviteUpdateManyMutationInputSchema,CoachInviteUncheckedUpdateManyInputSchema ]),
+  where: CoachInviteWhereInputSchema.optional(),
+}).strict() ;
+
+export const CoachInviteDeleteManyArgsSchema: z.ZodType<Prisma.CoachInviteDeleteManyArgs> = z.object({
+  where: CoachInviteWhereInputSchema.optional(),
 }).strict() ;
 
 export const AccountCreateArgsSchema: z.ZodType<Prisma.AccountCreateArgs> = z.object({
